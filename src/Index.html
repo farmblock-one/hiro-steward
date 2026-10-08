@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <style>
+    :root {
+      --bg: #f6f6f3; --card: #fff; --text: #1d1d1b; --muted: #77776f; --line: #e6e5df;
+      --accent: #2f7d5b; --accent-soft: #e3f1ea; --warn: #c2410c; --danger: #b91c1c;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #141413; --card: #1f1f1d; --text: #ecebe6; --muted: #9a998f; --line: #2f2f2c;
+        --accent: #5cc195; --accent-soft: #1d3a2d; --warn: #fb923c; --danger: #f87171;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      padding: 16px 16px calc(84px + env(safe-area-inset-bottom));
+    }
+    h1 { font-size: 22px; margin: 4px 0 12px; }
+    h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 20px 0 8px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+    .row { display: flex; align-items: center; gap: 10px; }
+    .grow { flex: 1; min-width: 0; }
+    .muted { color: var(--muted); font-size: 13px; }
+    input, button { font: inherit; }
+    input[type=text] {
+      width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line);
+      background: var(--card); color: var(--text); outline: none;
+    }
+    input[type=text]:focus { border-color: var(--accent); }
+    button { border: 0; border-radius: 12px; padding: 12px 16px; background: var(--accent); color: #fff; font-weight: 600; }
+    button.ghost { background: transparent; color: var(--accent); padding: 6px 8px; }
+    .toast { margin-top: 8px; white-space: pre-line; font-size: 14px; }
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .stat .v { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .bar { height: 6px; background: var(--accent-soft); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+    .bar > i { display: block; height: 100%; background: var(--accent); }
+    .list > div { padding: 10px 0; border-bottom: 1px solid var(--line); }
+    .list > div:last-child { border-bottom: 0; }
+    .amt { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+    .days { display: flex; gap: 6px; margin-top: 8px; }
+    .day {
+      flex: 1; aspect-ratio: 1; max-width: 40px; border-radius: 8px; border: 1px solid var(--line);
+      display: grid; place-items: center; font-size: 11px; color: var(--muted); background: transparent; padding: 0;
+    }
+    .day.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .check {
+      width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--line); background: transparent; padding: 0; flex: none;
+    }
+    .check.doing { border-color: var(--warn); }
+    .tag { font-size: 12px; color: var(--muted); }
+    .overdue { color: var(--danger); } .due-today { color: var(--warn); }
+    nav {
+      position: fixed; left: 0; right: 0; bottom: 0; display: flex; background: var(--card);
+      border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom);
+    }
+    nav button { flex: 1; background: transparent; color: var(--muted); border-radius: 0; padding: 12px 0; font-size: 13px; }
+    nav button.active { color: var(--accent); }
+    .tab { display: none; } .tab.active { display: block; }
+    .empty { color: var(--muted); text-align: center; padding: 16px 0; }
+  </style>
+</head>
+<body>
+  <h1>Hiro Steward</h1>
+
+  <form id="quick" class="row">
+    <input id="quickInput" type="text" class="grow" placeholder="cafe 35k · đọc sách · todo gửi báo cáo mai" autocomplete="off">
+    <button>Ghi</button>
+  </form>
+  <div id="toast" class="toast muted"></div>
+
+  <section id="tab-money" class="tab active">
+    <h2>Chi tiêu</h2>
+    <div class="card stats" id="totals"></div>
+    <h2>Tháng này theo danh mục</h2>
+    <div class="card list" id="cats"></div>
+    <h2>Gần đây</h2>
+    <div class="card list" id="recent"></div>
+  </section>
+
+  <section id="tab-habits" class="tab">
+    <h2>Thói quen · 7 ngày</h2>
+    <div class="card list" id="habits"></div>
+    <h2>Thêm thói quen</h2>
+    <form id="habitForm" class="row">
+      <input id="habitName" type="text" class="grow" placeholder="Tên, vd: Tập thể dục">
+      <input id="habitTarget" type="text" inputmode="numeric" placeholder="/tuần" style="width:72px">
+      <button>Thêm</button>
+    </form>
+  </section>
+
+  <section id="tab-tasks" class="tab">
+    <h2>Thêm việc</h2>
+    <form id="taskForm" class="row">
+      <input id="taskInput" type="text" class="grow" placeholder="Gửi báo cáo mai #work">
+      <button>Thêm</button>
+    </form>
+    <h2>Đang mở</h2>
+    <div class="card list" id="tasks"></div>
+  </section>
+
+  <nav>
+    <button data-tab="money" class="active">💸 Tiền</button>
+    <button data-tab="habits">🌱 Thói quen</button>
+    <button data-tab="tasks">🎯 Việc</button>
+  </nav>
+
+<script>
+  const KEY = <?!= JSON.stringify(webKey) ?>;
+  const $ = s => document.querySelector(s);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const money = n => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.') + 'đ';
+  const ddmm = k => k ? k.slice(8, 10) + '/' + k.slice(5, 7) : '';
+  const DOW = ['CN','T2','T3','T4','T5','T6','T7'];
+  let state = null;
+
+  function call(fn, ...args) {
+    return new Promise((resolve, reject) =>
+      google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[fn](KEY, ...args));
+  }
+  function toast(msg) { $('#toast').textContent = msg || ''; }
+
+  async function load() {
+    try { state = await call('api_dashboard'); render(); }
+    catch (e) { toast('Lỗi: ' + e.message); }
+  }
+
+  function render() {
+    const f = state.finance;
+    $('#totals').innerHTML = [['Hôm nay', f.totals.today], ['Tuần', f.totals.week], ['Tháng', f.totals.month]]
+      .map(([l, v]) => `<div class="stat"><div class="muted">${l}</div><div class="v">${money(v)}</div></div>`).join('');
+
+    const max = Math.max(1, ...f.byCategory.map(c => c.amount));
+    $('#cats').innerHTML = f.byCategory.length ? f.byCategory.map(c =>
+      `<div><div class="row"><span class="grow">${esc(c.name)}</span><span class="amt">${money(c.amount)}</span></div>
+       <div class="bar"><i style="width:${(c.amount / max * 100).toFixed(1)}%"></i></div></div>`).join('')
+      : '<div class="empty">Chưa có chi tiêu tháng này</div>';
+
+    $('#recent').innerHTML = f.recent.length ? f.recent.map(e =>
+      `<div class="row"><div class="grow">${esc(e.desc || e.category)}<div class="muted">${ddmm(e.date)} · ${esc(e.category)}</div></div>
+       <span class="amt">${money(e.amount)}</span></div>`).join('')
+      : '<div class="empty">Chưa có dữ liệu</div>';
+
+    $('#habits').innerHTML = state.habits.length ? state.habits.map((h, hi) =>
+      `<div><div class="row"><b class="grow">${esc(h.name)}</b><span class="muted">🔥 ${h.streak} · ${h.week}/${h.target} tuần</span></div>
+       <div class="days">${h.days.map((d, di) =>
+         `<button class="day ${d.done ? 'on' : ''}" data-h="${hi}" data-d="${di}">${DOW[new Date(d.date + 'T12:00:00Z').getUTCDay()]}</button>`).join('')}</div></div>`).join('')
+      : '<div class="empty">Chưa có thói quen nào</div>';
+
+    $('#tasks').innerHTML = state.tasks.length ? state.tasks.map(t => {
+      const cls = t.due && t.due < state.today ? 'overdue' : t.due === state.today ? 'due-today' : '';
+      return `<div class="row"><button class="check ${t.status === 'doing' ? 'doing' : ''}" data-done="${t.id}" aria-label="Xong"></button>
+        <div class="grow">${esc(t.title)}<div class="tag"><span class="${cls}">${t.due ? 'hạn ' + ddmm(t.due) : ''}</span>
+        ${t.project ? ' #' + esc(t.project) : ''} ${t.status === 'doing' ? ' · đang làm' : ''}</div></div>
+        ${t.status !== 'doing' ? `<button class="ghost" data-doing="${t.id}">Bắt đầu</button>` : ''}</div>`;
+    }).join('') : '<div class="empty">Không còn việc nào 🎉</div>';
+  }
+
+  async function submit(fn, input, ...extra) {
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    toast('Đang ghi…');
+    try { toast(await call(fn, text, ...extra)); load(); } catch (e) { toast('Lỗi: ' + e.message); }
+  }
+
+  $('#quick').onsubmit = e => { e.preventDefault(); submit('api_quickAdd', $('#quickInput')); };
+  $('#taskForm').onsubmit = e => { e.preventDefault(); submit('api_addTask', $('#taskInput')); };
+  $('#habitForm').onsubmit = e => {
+    e.preventDefault();
+    submit('api_addHabit', $('#habitName'), $('#habitTarget').value);
+    $('#habitTarget').value = '';
+  };
+
+  document.addEventListener('click', async e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.tab) {
+      document.querySelectorAll('nav button').forEach(x => x.classList.toggle('active', x === b));
+      document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x.id === 'tab-' + b.dataset.tab));
+    } else if (b.dataset.h != null) {
+      const h = state.habits[b.dataset.h], d = h.days[b.dataset.d];
+      d.done = !d.done; b.classList.toggle('on', d.done);  // cập nhật lạc quan
+      try { await call('api_toggleHabit', h.name, d.date); load(); } catch (err) { toast('Lỗi: ' + err.message); load(); }
+    } else if (b.dataset.done) {
+      b.closest('.row').style.opacity = .4;
+      try { toast(await call('api_setTask', b.dataset.done, 'done')); load(); } catch (err) { toast('Lỗi: ' + err.message); }
+    } else if (b.dataset.doing) {
+      try { toast(await call('api_setTask', b.dataset.doing, 'doing')); load(); } catch (err) { toast('Lỗi: ' + err.message); }
+    }
+  });
+
+  load();
+</script>
+</body>
+</html>
