@@ -105,3 +105,20 @@ function diagnose() {
     console.log(r.ok ? 'Gửi tin thử: OK' : `❌ Gửi tin thử thất bại: ${r.description}`);
   }
 }
+
+/** Giả lập Telegram gọi webhook để biết lỗi nằm ở code hay ở cấu hình deploy. */
+function testWebhook() {
+  const chatId = Number((prop_('ALLOWED_CHAT_ID') || '').trim());
+  // 1. Chạy thẳng code xử lý (bỏ qua webhook)
+  handleUpdate_({ update_id: Date.now(), message: { chat: { id: chatId }, text: '/help' } });
+  console.log('1. Đã chạy code trực tiếp. Nếu Telegram nhận được tin hướng dẫn (/help) thì code OK.');
+  // 2. Gọi URL webhook y như Telegram
+  const res = UrlFetchApp.fetch(webhookUrl_(), {
+    method: 'post', contentType: 'application/json', followRedirects: false, muteHttpExceptions: true,
+    payload: JSON.stringify({ update_id: Date.now() + 1, message: { chat: { id: chatId }, text: '/today' } }),
+  });
+  const loc = res.getHeaders()['Location'] || '';
+  console.log(`2. HTTP ${res.getResponseCode()} → ${loc || res.getContentText().slice(0, 300)}`);
+  if (loc.indexOf('accounts.google.com') >= 0) console.log('❌ Bản deploy chưa cho phép "Bất kỳ ai" truy cập.');
+  else if (loc.indexOf('googleusercontent.com') >= 0) console.log('✅ Webhook chạy được. Telegram sẽ nhận được tin /today.');
+}
