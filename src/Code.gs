@@ -85,3 +85,23 @@ function eveningReminder() {
   const chatId = prop_('ALLOWED_CHAT_ID');
   if (chatId) send_(chatId, '🌙 Tổng kết ngày\n' + dailyDigest_());
 }
+
+/** Kiểm tra cấu hình khi bot không trả lời. Chạy tay rồi xem Nhật ký thực thi. */
+function diagnose() {
+  const p = PropertiesService.getScriptProperties().getProperties();
+  ['TELEGRAM_TOKEN', 'ALLOWED_CHAT_ID', 'WEB_APP_URL', 'WEBHOOK_SECRET', 'WEB_KEY', 'SHEET_ID', 'GEMINI_API_KEY'].forEach(k => {
+    const shown = k === 'ALLOWED_CHAT_ID' || k === 'WEB_APP_URL' ? JSON.stringify(p[k]) : 'đã đặt';
+    console.log(`${k}: ${p[k] ? shown : '❌ CHƯA ĐẶT'}`);
+  });
+  if (!p.TELEGRAM_TOKEN) return;
+  const me = tg_('getMe');
+  console.log(me.ok ? `Bot: @${me.result.username}` : '❌ TELEGRAM_TOKEN sai');
+  const info = tg_('getWebhookInfo').result || {};
+  console.log(`Webhook URL: ${info.url || '❌ CHƯA ĐẶT (chạy setWebhook)'}`);
+  console.log(`Tin đang chờ: ${info.pending_update_count}`);
+  if (info.last_error_message) console.log(`Lỗi gần nhất từ Telegram: ${info.last_error_message}`);
+  if (p.ALLOWED_CHAT_ID) {
+    const r = tg_('sendMessage', { chat_id: p.ALLOWED_CHAT_ID.trim(), text: '🔧 Test từ diagnose(): bot gửi được tin cho bạn.' });
+    console.log(r.ok ? 'Gửi tin thử: OK' : `❌ Gửi tin thử thất bại: ${r.description}`);
+  }
+}

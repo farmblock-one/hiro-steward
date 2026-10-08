@@ -26,7 +26,7 @@ function handleUpdate_(update) {
   const chatId = String(msg.chat.id);
 
   // Chỉ phục vụ đúng 1 người. Lần đầu chưa cấu hình thì báo chat ID để bạn điền vào.
-  const allowed = prop_('ALLOWED_CHAT_ID');
+  const allowed = (prop_('ALLOWED_CHAT_ID') || '').trim();
   if (!allowed) {
     send_(chatId, `Chat ID của bạn là ${chatId}.\nĐặt Script Property ALLOWED_CHAT_ID = ${chatId} rồi nhắn lại nhé.`);
     return;
