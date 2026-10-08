@@ -12,25 +12,11 @@ function tasks_(includeDone) {
 /** Tách hạn chót và #dự án khỏi tiêu đề. */
 function parseTaskText_(text) {
   let title = ' ' + String(text).trim() + ' ';
-  let due = '', project = '';
-  const t = today_();
-
+  let project = '';
   const p = title.match(/\s#([\p{L}\d_\-]+)/u);
   if (p) { project = p[1]; title = title.replace(p[0], ' '); }
-
-  let m = title.match(/\s(?:hạn|deadline|trước)?\s*(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?(?=\s)/i);
-  if (m) {
-    let y = m[3] ? Number(m[3].length === 2 ? '20' + m[3] : m[3]) : Number(t.slice(0, 4));
-    const pad = n => String(n).padStart(2, '0');
-    due = `${y}-${pad(m[2])}-${pad(m[1])}`;
-    if (!m[3] && due < t) due = `${y + 1}-${pad(m[2])}-${pad(m[1])}`;
-    title = title.replace(m[0], ' ');
-  } else if ((m = title.match(/\s(?:hạn\s+)?(hôm nay|ngày mai|mai|tuần sau)(?=\s)/i))) {
-    const w = m[1].toLowerCase();
-    due = w === 'hôm nay' ? t : w === 'tuần sau' ? addDays_(weekStart_(t), 7) : addDays_(t, 1);
-    title = title.replace(m[0], ' ');
-  }
-  return { title: capitalize_(title.replace(/\s+/g, ' ').trim()), due, project };
+  const d = extractDue_(title);
+  return { title: capitalize_(d.text), due: d.due, project };
 }
 
 function addTask_(text, dueOverride) {

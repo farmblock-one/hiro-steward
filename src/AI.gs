@@ -52,9 +52,12 @@ function classify_(text) {
     `Thói quen đang theo dõi: ${JSON.stringify(habits)}\n` +
     `Danh mục chi tiêu: ${JSON.stringify(Object.keys(CATEGORIES).concat(DEFAULT_CATEGORY))}\n` +
     'Phân loại tin nhắn của người dùng và trả về JSON đúng dạng:\n' +
-    '{"intent":"expense|habit|task|unknown","amount":số VND hoặc null,"category":tên danh mục hoặc null,' +
+    '{"intent":"expense|habit|task|lead|unknown","amount":số VND hoặc null,"category":tên danh mục hoặc null,' +
     '"description":mô tả ngắn hoặc null,"habit":tên thói quen (phải nằm trong danh sách) hoặc null,' +
-    '"task":nội dung công việc hoặc null,"due":"yyyy-MM-dd" hoặc null}\n' +
+    '"task":nội dung công việc hoặc null,"due":"yyyy-MM-dd" hoặc null,' +
+    '"lead":{"name":tên khách/công ty,"contact":người liên hệ hoặc null,"value":số VND hoặc null,' +
+    '"next_action":việc tiếp theo hoặc null,"due":"yyyy-MM-dd" hoặc null} hoặc null}\n' +
+    'Dùng intent "lead" khi người dùng nói về khách hàng tiềm năng/deal/đối tác cần theo dõi.\n' +
     `Tin nhắn: ${JSON.stringify(text)}`;
   return gemini_([{ text: prompt }], true);
 }

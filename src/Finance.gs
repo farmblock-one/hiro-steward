@@ -64,7 +64,7 @@ function logExpense_({ amount, category, desc, source, raw, date }) {
     capitalize_(desc), source || 'text', raw || '',
   ]);
   const s = spendingTotals_();
-  return `✅ Đã ghi ${money_(amount)} · ${category || DEFAULT_CATEGORY}${desc ? ' · ' + capitalize_(desc) : ''}` +
+  return `🐱💰 Đã ghi ${money_(amount)} · ${category || DEFAULT_CATEGORY}${desc ? ' · ' + capitalize_(desc) : ''}` +
     (date && date !== today_() ? ` (ngày ${prettyDate_(date)})` : '') +
     `\nHôm nay: ${money_(s.today)} | Tháng này: ${money_(s.month)}`;
 }
