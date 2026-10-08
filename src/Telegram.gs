@@ -26,7 +26,7 @@ function handleUpdate_(update) {
   const chatId = String(msg.chat.id);
 
   // Chỉ phục vụ đúng 1 người. Lần đầu chưa cấu hình thì báo chat ID để bạn điền vào.
-  const allowed = prop_('ALLOWED_CHAT_ID');
+  const allowed = (prop_('ALLOWED_CHAT_ID') || '').trim();
   if (!allowed) {
     send_(chatId, `Chat ID của bạn là ${chatId}.\nĐặt Script Property ALLOWED_CHAT_ID = ${chatId} rồi nhắn lại nhé.`);
     return;
@@ -53,6 +53,11 @@ function webhookUrl_() {
 }
 
 function webAppLink_() {
-  const base = prop_('WEB_APP_URL');
-  return base && prop_('WEB_KEY') ? `${base}?key=${encodeURIComponent(prop_('WEB_KEY'))}` : null;
+  const key = prop_('WEB_KEY');
+  if (!key) return null;
+  const pages = (prop_('PAGES_URL') || '').trim();
+  const api = (prop_('WEB_APP_URL') || '').trim();
+  // Hash (#...) không bao giờ gửi lên server nên key không lộ qua log của GitHub.
+  if (pages && api) return `${pages}#key=${encodeURIComponent(key)}&api=${encodeURIComponent(api)}`;
+  return api ? `${api}?key=${encodeURIComponent(key)}` : null;
 }

@@ -7,8 +7,11 @@
 
 function doPost(e) {
   try {
-    // Apps Script không đọc được header, nên secret đi qua query string.
-    if (!e || !e.parameter || e.parameter.secret !== prop_('WEBHOOK_SECRET')) return ok_();
+    if (!e || !e.postData) return ok_();
+    // API cho web app trên GitHub Pages: body JSON {key, fn, args}, không có ?secret=
+    if (!e.parameter.secret) return apiResponse_(e.postData.contents);
+    // Webhook Telegram. Apps Script không đọc được header nên secret đi qua query string.
+    if (e.parameter.secret !== prop_('WEBHOOK_SECRET')) return ok_();
     const update = JSON.parse(e.postData.contents);
     // Telegram có thể gửi lại cùng 1 update -> chống ghi trùng.
     const cache = CacheService.getScriptCache();
@@ -84,4 +87,41 @@ function installTriggers() {
 function eveningReminder() {
   const chatId = prop_('ALLOWED_CHAT_ID');
   if (chatId) send_(chatId, '🌙 Tổng kết ngày\n' + dailyDigest_());
+}
+
+/** Kiểm tra cấu hình khi bot không trả lời. Chạy tay rồi xem Nhật ký thực thi. */
+function diagnose() {
+  const p = PropertiesService.getScriptProperties().getProperties();
+  ['TELEGRAM_TOKEN', 'ALLOWED_CHAT_ID', 'WEB_APP_URL', 'WEBHOOK_SECRET', 'WEB_KEY', 'SHEET_ID', 'GEMINI_API_KEY'].forEach(k => {
+    const shown = k === 'ALLOWED_CHAT_ID' || k === 'WEB_APP_URL' ? JSON.stringify(p[k]) : 'đã đặt';
+    console.log(`${k}: ${p[k] ? shown : '❌ CHƯA ĐẶT'}`);
+  });
+  if (!p.TELEGRAM_TOKEN) return;
+  const me = tg_('getMe');
+  console.log(me.ok ? `Bot: @${me.result.username}` : '❌ TELEGRAM_TOKEN sai');
+  const info = tg_('getWebhookInfo').result || {};
+  console.log(`Webhook URL: ${info.url || '❌ CHƯA ĐẶT (chạy setWebhook)'}`);
+  console.log(`Tin đang chờ: ${info.pending_update_count}`);
+  if (info.last_error_message) console.log(`Lỗi gần nhất từ Telegram: ${info.last_error_message}`);
+  if (p.ALLOWED_CHAT_ID) {
+    const r = tg_('sendMessage', { chat_id: p.ALLOWED_CHAT_ID.trim(), text: '🔧 Test từ diagnose(): bot gửi được tin cho bạn.' });
+    console.log(r.ok ? 'Gửi tin thử: OK' : `❌ Gửi tin thử thất bại: ${r.description}`);
+  }
+}
+
+/** Giả lập Telegram gọi webhook để biết lỗi nằm ở code hay ở cấu hình deploy. */
+function testWebhook() {
+  const chatId = Number((prop_('ALLOWED_CHAT_ID') || '').trim());
+  // 1. Chạy thẳng code xử lý (bỏ qua webhook)
+  handleUpdate_({ update_id: Date.now(), message: { chat: { id: chatId }, text: '/help' } });
+  console.log('1. Đã chạy code trực tiếp. Nếu Telegram nhận được tin hướng dẫn (/help) thì code OK.');
+  // 2. Gọi URL webhook y như Telegram
+  const res = UrlFetchApp.fetch(webhookUrl_(), {
+    method: 'post', contentType: 'application/json', followRedirects: false, muteHttpExceptions: true,
+    payload: JSON.stringify({ update_id: Date.now() + 1, message: { chat: { id: chatId }, text: '/today' } }),
+  });
+  const loc = res.getHeaders()['Location'] || '';
+  console.log(`2. HTTP ${res.getResponseCode()} → ${loc || res.getContentText().slice(0, 300)}`);
+  if (loc.indexOf('accounts.google.com') >= 0) console.log('❌ Bản deploy chưa cho phép "Bất kỳ ai" truy cập.');
+  else if (loc.indexOf('googleusercontent.com') >= 0) console.log('✅ Webhook chạy được. Telegram sẽ nhận được tin /today.');
 }
