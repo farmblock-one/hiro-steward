@@ -73,8 +73,13 @@
       padding: 10px 14px; font-weight: 600; box-shadow: var(--shadow); margin-bottom: 10px;
     }
     .bubble .brand { display: block; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--cat-dark); }
-    #toast { min-height: 20px; margin: 8px 2px 0; font-size: 14px; white-space: pre-line; color: var(--muted); }
-    #toast.err { color: var(--danger); }
+    #toast {
+      position: fixed; left: 16px; right: 16px; bottom: calc(76px + env(safe-area-inset-bottom)); z-index: 15; max-width: 528px; margin: 0 auto;
+      background: var(--text); color: var(--bg); border-radius: 16px; padding: 11px 14px; font-size: 14px; font-weight: 600; white-space: pre-line;
+      box-shadow: 0 10px 24px -8px rgba(40, 20, 5, .55); display: none;
+    }
+    #toast.show { display: block; } #toast.err { background: var(--danger); color: #fff; }
+    .inline { margin-top: 8px; } .hint { margin: 6px 2px 0; }
 
     /* ---- tiles tiền ---- */
     .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
@@ -205,27 +210,31 @@
       <div class="bubble grow"><span class="brand">Hiro Steward</span><span id="mood">Meo~ đang tải…</span></div>
     </div>
 
-    <form id="quick" class="row">
-      <input id="quickInput" type="text" class="grow" placeholder="cafe 35k · todo gọi khách mai · đọc sách" autocomplete="off">
-      <button class="btn">Ghi</button>
-    </form>
-    <div id="toast"></div>
-
     <!-- ========== LEAD ========== -->
     <section id="tab-leads" class="tab">
-      <div class="row" style="margin-top:20px"><h2 class="grow" style="margin:0 2px">Lead đang theo dõi</h2><button class="btn gold" id="addLead" type="button">+ Thêm lead</button></div>
-      <div class="tiles" id="leadStats" style="margin-top:10px"></div>
+      <div class="row" style="margin-top:20px"><h2 class="grow" style="margin:0 2px">Lead đang theo dõi</h2><button class="btn gold" id="addLead" type="button">📝 Biểu mẫu</button></div>
+      <form id="leadForm" class="row inline">
+        <input id="leadInput" type="text" class="grow" placeholder="ABC Corp | 50tr | gửi báo giá | thứ 6" autocomplete="off">
+        <button class="btn">Thêm</button>
+      </form>
+      <div class="muted hint">Gõ nhanh: tên | giá trị | việc tiếp theo | hạn (ngăn cách bằng |), hoặc bấm “Biểu mẫu” để nhập từng ô.</div>
+      <div class="tiles" id="leadStats" style="margin-top:14px"></div>
       <div class="chips" id="stageChips"></div>
       <div id="leadList"></div>
     </section>
 
     <!-- ========== TIỀN ========== -->
     <section id="tab-money" class="tab">
-      <h2>Chi tiêu</h2>
+      <h2>Ghi chi tiêu</h2>
+      <form id="moneyForm" class="row">
+        <input id="moneyInput" type="text" class="grow" placeholder="cafe 35k · hôm qua grab 120k · tiền nhà 5tr" autocomplete="off">
+        <button class="btn">Ghi</button>
+      </form>
+      <h2>Tổng quan</h2>
       <div class="tiles" id="totals"></div>
       <h2>Tháng này theo danh mục</h2>
       <div class="card list" id="cats"></div>
-      <h2>Gần đây</h2>
+      <div class="row"><h2 class="grow">Gần đây</h2><button class="link" id="undoExp" type="button">↩︎ Xoá khoản vừa ghi</button></div>
       <div class="card list" id="recent"></div>
     </section>
 
@@ -261,6 +270,8 @@
     <button data-tab="habits"><svg><use href="#i-paw"/></svg>Thói quen</button>
     <button data-tab="tasks"><svg><use href="#i-check"/></svg>Việc</button>
   </div></nav>
+
+  <div id="toast" role="status" aria-live="polite"></div>
 
   <div class="sheet-wrap" id="sheetWrap">
     <div class="sheet-bg" data-close></div>
@@ -300,8 +311,8 @@
   let state = null, tab = store.get('hiro_tab') || 'leads', stageFilter = 'all', toastTimer;
 
   function toast(msg, isErr) {
-    const t = $('#toast'); t.textContent = msg || ''; t.className = isErr ? 'err' : '';
-    clearTimeout(toastTimer); if (msg) toastTimer = setTimeout(() => { t.textContent = ''; }, 7000);
+    const t = $('#toast'); t.textContent = msg || ''; t.className = (msg ? 'show ' : '') + (isErr ? 'err' : '');
+    clearTimeout(toastTimer); if (msg) toastTimer = setTimeout(() => { t.className = ''; t.textContent = ''; }, isErr ? 9000 : 5000);
   }
   const errMsg = e => 'Lỗi: ' + (e && e.message || e);
 
@@ -478,7 +489,12 @@
     input.value = ''; toast('Đang ghi…');
     try { toast(await call(fn, text, ...extra)); load(); } catch (e) { toast(errMsg(e), true); }
   }
-  $('#quick').onsubmit = e => { e.preventDefault(); submit('api_quickAdd', $('#quickInput')); };
+  $('#moneyForm').onsubmit = e => { e.preventDefault(); submit('api_addExpense', $('#moneyInput')); };
+  $('#leadForm').onsubmit = e => { e.preventDefault(); submit('api_addLeadText', $('#leadInput')); };
+  $('#undoExp').onclick = async () => {
+    if (!window.confirm('Xoá khoản chi vừa ghi gần nhất?')) return;
+    try { toast(await call('api_undoExpense')); load(); } catch (e) { toast(errMsg(e), true); }
+  };
   $('#taskForm').onsubmit = e => { e.preventDefault(); submit('api_addTask', $('#taskInput')); };
   $('#habitForm').onsubmit = e => { e.preventDefault(); const t = $('#habitTarget').value; submit('api_addHabit', $('#habitName'), t); $('#habitTarget').value = ''; };
   $('#sheetForm').onsubmit = e => { e.preventDefault(); if (sheetSubmit) sheetSubmit(); };

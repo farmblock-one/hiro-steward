@@ -91,4 +91,19 @@ assert.strictEqual(api('dashboard').result.leads[0].value, 45e6);
 assert.ok(api('leadSnooze', id, 2).ok);
 assert.ok(api('leadStage', id, 'won').ok); assert.strictEqual(api('dashboard').result.leads.length, 0);
 assert.strictEqual(api('leadSave', { name: '' }).ok, false);
+
+// --- endpoint riêng từng mục (web app) ---
+let ex = api('addExpense', 'cafe 35k');
+assert.ok(ex.ok && ex.result.includes('35.000đ') && ex.result.includes('Ăn uống'), JSON.stringify(ex));
+assert.ok(api('addExpense', 'hôm qua grab 120k').result.includes('Đi lại'));
+assert.strictEqual(api('addExpense', 'không có số tiền').ok, false);
+assert.strictEqual(api('addExpense', 'đọc sách 30 trang').ok, true, 'khoản chi không bị nhầm sang thói quen');
+assert.strictEqual(env.sheets.Expenses.data.length, 4); // header + 3
+assert.ok(api('undoExpense').result.includes('Đã xoá'));
+assert.strictEqual(env.sheets.Expenses.data.length, 3);
+const al = api('addLeadText', 'Omega Ltd | 80tr | gọi demo | mai');
+assert.ok(al.ok && al.result.includes('Omega Ltd'), JSON.stringify(al));
+assert.strictEqual(api('addLeadText', 'Omega Ltd').ok, false, 'trùng tên bị chặn');
+assert.strictEqual(api('addLeadText', '   ').ok, false);
+assert.strictEqual(api('dashboard').result.leads.find(l => l.name === 'Omega Ltd').due, day(1));
 console.log('All lead tests passed');

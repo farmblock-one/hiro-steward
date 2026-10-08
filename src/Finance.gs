@@ -69,6 +69,15 @@ function logExpense_({ amount, category, desc, source, raw, date }) {
     `\nHôm nay: ${money_(s.today)} | Tháng này: ${money_(s.month)}`;
 }
 
+/** “hôm qua cafe 35k” -> ghi 1 khoản chi. Trả về null nếu không thấy số tiền. */
+function addExpenseText_(text, source) {
+  const past = extractPastDay_(text);
+  const parsed = parseAmount_(past.text);
+  if (!parsed) return null;
+  const category = guessCategory_(parsed.rest) || aiCategory_(parsed.rest) || DEFAULT_CATEGORY;
+  return logExpense_({ amount: parsed.amount, category, desc: parsed.rest, source, raw: text, date: past.date });
+}
+
 function undoLastExpense_() {
   const sh = sheet_(SHEETS.EXPENSES);
   const last = sh.getLastRow();
