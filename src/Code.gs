@@ -68,6 +68,11 @@ function setWebhook() {
     { command: 'habit_add', description: 'Thêm thói quen: /habit_add Đọc sách 5' },
     { command: 'todo', description: 'Thêm việc: /todo Gửi báo cáo mai #work' },
     { command: 'tasks', description: 'Danh sách việc đang mở' },
+    { command: 'leads', description: 'Danh sách lead đang mở' },
+    { command: 'lead', description: 'Thêm lead: /lead ABC | 50tr | gửi báo giá | thứ 6' },
+    { command: 'log', description: 'Ghi liên hệ: /log 3 đã gọi | gửi HĐ mai' },
+    { command: 'next', description: 'Đặt next action: /next 3 họp demo 25/10' },
+    { command: 'pipeline', description: 'Phễu bán hàng' },
     { command: 'done', description: 'Hoàn thành việc: /done 3' },
     { command: 'app', description: 'Mở web app' },
     { command: 'help', description: 'Hướng dẫn' },
@@ -76,17 +81,23 @@ function setWebhook() {
   console.log(JSON.stringify(tg_('getWebhookInfo')));
 }
 
-/** Nhắc nhở mỗi tối 21h. */
+/** Nhắc nhở: 8h sáng (lead, việc) và 21h tối (tổng kết ngày). Chạy lại được nhiều lần. */
 function installTriggers() {
   ScriptApp.getProjectTriggers()
-    .filter(t => t.getHandlerFunction() === 'eveningReminder')
+    .filter(t => ['eveningReminder', 'morningReminder'].indexOf(t.getHandlerFunction()) >= 0)
     .forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('morningReminder').timeBased().everyDays(1).atHour(8).inTimezone(TZ).create();
   ScriptApp.newTrigger('eveningReminder').timeBased().everyDays(1).atHour(21).inTimezone(TZ).create();
 }
 
+function morningReminder() {
+  const chatId = (prop_('ALLOWED_CHAT_ID') || '').trim();
+  if (chatId) send_(chatId, morningBrief_());
+}
+
 function eveningReminder() {
-  const chatId = prop_('ALLOWED_CHAT_ID');
-  if (chatId) send_(chatId, '🌙 Tổng kết ngày\n' + dailyDigest_());
+  const chatId = (prop_('ALLOWED_CHAT_ID') || '').trim();
+  if (chatId) send_(chatId, '🌙 Tổng kết ngày\n\n' + dailyDigest_());
 }
 
 /** Kiểm tra cấu hình khi bot không trả lời. Chạy tay rồi xem Nhật ký thực thi. */

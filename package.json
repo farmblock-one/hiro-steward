@@ -1,0 +1,9 @@
+{
+  "name": "hiro-steward",
+  "private": true,
+  "description": "Trợ lý cá nhân: tiền, thói quen, công việc, lead tracking. Chạy trên Google Apps Script + GitHub Pages.",
+  "scripts": {
+    "build": "node scripts/build.js",
+    "test": "node test/parse.test.js && node test/leads.test.js"
+  }
+}
