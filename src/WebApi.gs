@@ -55,3 +55,28 @@ function api_setTask(key, id, status) {
   auth_(key);
   return setTaskStatus_(id, status);
 }
+
+// ---------- API JSON cho web app host ngoài (GitHub Pages) ----------
+
+const API_FUNCTIONS = {
+  dashboard: api_dashboard,
+  quickAdd: api_quickAdd,
+  toggleHabit: api_toggleHabit,
+  addHabit: api_addHabit,
+  addTask: api_addTask,
+  setTask: api_setTask,
+};
+
+function apiResponse_(body) {
+  let out;
+  try {
+    const req = JSON.parse(body);
+    const fn = Object.prototype.hasOwnProperty.call(API_FUNCTIONS, req.fn) ? API_FUNCTIONS[req.fn] : null;
+    if (!fn) throw new Error('Unknown function');
+    out = { ok: true, result: fn.apply(null, [req.key].concat(req.args || [])) };
+  } catch (err) {
+    console.error(err && err.stack || err);
+    out = { ok: false, error: String(err && err.message || err) };
+  }
+  return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
+}

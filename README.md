@@ -82,6 +82,18 @@ Nhắn `/app` cho bot → mở link bằng Safari → nút Share → **Add to Ho
 
 > ⚠️ Mỗi lần sửa code, vào **Deploy → Manage deployments → Edit → Version: New version** để URL `/exec` cũ nhận code mới. Nếu bạn tạo *deployment mới* thì URL sẽ đổi, và phải cập nhật `WEB_APP_URL` rồi chạy lại `setWebhook`.
 
+## Đưa web app lên GitHub Pages (tuỳ chọn, link đẹp + app toàn màn hình trên iPhone)
+
+Giao diện nằm ở `docs/` (HTML tĩnh), còn Apps Script chỉ làm API cho trang này gọi vào. Repo cần để **public** để dùng Pages miễn phí. Repo chỉ chứa code, còn key nằm trong Script Properties và trên điện thoại của bạn.
+
+1. Dán lại `Code.gs` đã cập nhật vào Apps Script → **Deploy → Manage deployments → ✏️ → New version → Deploy** (URL giữ nguyên).
+2. GitHub: **Settings → Pages → Build and deployment → Deploy from a branch → `main` / `/docs` → Save**. Sau ~1 phút trang có tại `https://<user>.github.io/hiro-steward/`.
+3. Thêm Script Property `PAGES_URL` = địa chỉ trang trên (không có dấu `/` thừa cũng được).
+4. Nhắn `/app` cho bot. Bot trả về link có kèm `#key=…&api=…`; mở link đó **một lần** trong Safari để app tự lưu cấu hình. (Phần sau dấu `#` không bao giờ gửi lên GitHub.)
+5. Share → **Add to Home Screen**. Nếu app trên màn hình chính hiện form nhập key (iOS tách bộ nhớ giữa Safari và app), dán `WEB_APP_URL` và `WEB_KEY` vào một lần.
+
+Link cũ `…/exec?key=…` vẫn dùng được song song.
+
 ## Bảo mật
 - Webhook chỉ nhận request có `?secret=WEBHOOK_SECRET`, vì Apps Script không đọc được header nên secret phải đi qua URL. Bot cũng chỉ trả lời đúng `ALLOWED_CHAT_ID`.
 - Web app và mọi hàm `api_*` đều yêu cầu `WEB_KEY`. Đừng chia sẻ link `/app`. Nếu lộ link, đổi `WEB_KEY` trong Script Properties là xong.
@@ -100,7 +112,8 @@ src/
   WebApi.gs     các hàm web app gọi (có kiểm tra key)
   Config.gs     tên sheet, cột, từ khoá danh mục
   Utils.gs      Sheet / ngày tháng / format
-  Index.html    web app mobile (Tiền · Thói quen · Việc)
+  Index.html    web app mobile chạy ngay trong Apps Script
+docs/             cùng web app đó dạng tĩnh cho GitHub Pages (gọi API qua fetch)
 test/parse.test.js   test parser (node test/parse.test.js)
 ```
 

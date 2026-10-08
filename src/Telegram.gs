@@ -53,6 +53,11 @@ function webhookUrl_() {
 }
 
 function webAppLink_() {
-  const base = prop_('WEB_APP_URL');
-  return base && prop_('WEB_KEY') ? `${base}?key=${encodeURIComponent(prop_('WEB_KEY'))}` : null;
+  const key = prop_('WEB_KEY');
+  if (!key) return null;
+  const pages = (prop_('PAGES_URL') || '').trim();
+  const api = (prop_('WEB_APP_URL') || '').trim();
+  // Hash (#...) không bao giờ gửi lên server nên key không lộ qua log của GitHub.
+  if (pages && api) return `${pages}#key=${encodeURIComponent(key)}&api=${encodeURIComponent(api)}`;
+  return api ? `${api}?key=${encodeURIComponent(key)}` : null;
 }

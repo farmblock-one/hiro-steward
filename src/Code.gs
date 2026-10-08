@@ -7,8 +7,11 @@
 
 function doPost(e) {
   try {
-    // Apps Script không đọc được header, nên secret đi qua query string.
-    if (!e || !e.parameter || e.parameter.secret !== prop_('WEBHOOK_SECRET')) return ok_();
+    if (!e || !e.postData) return ok_();
+    // API cho web app trên GitHub Pages: body JSON {key, fn, args}, không có ?secret=
+    if (!e.parameter.secret) return apiResponse_(e.postData.contents);
+    // Webhook Telegram. Apps Script không đọc được header nên secret đi qua query string.
+    if (e.parameter.secret !== prop_('WEBHOOK_SECRET')) return ok_();
     const update = JSON.parse(e.postData.contents);
     // Telegram có thể gửi lại cùng 1 update -> chống ghi trùng.
     const cache = CacheService.getScriptCache();
