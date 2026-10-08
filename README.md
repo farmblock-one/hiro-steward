@@ -96,6 +96,8 @@ Nhắn `/app` cho bot → mở link bằng Safari → nút Share → **Add to Ho
 
 ## Đưa web app lên GitHub Pages (tuỳ chọn, link đẹp + app toàn màn hình trên iPhone)
 
+Mỗi tab có ô nhập riêng: **Lead** (gõ nhanh `tên | giá trị | việc | hạn` hoặc mở biểu mẫu), **Tiền** (`cafe 35k`, có nút xoá khoản vừa ghi), **Thói quen** (chạm dấu chân mỗi ngày), **Việc** (`gửi báo cáo mai #work`).
+
 Giao diện nằm ở `docs/` (HTML tĩnh, theme mèo cam 🐱 + tiền 🪙, tự đổi sáng/tối theo iPhone), còn Apps Script chỉ làm API cho trang này gọi vào. Repo cần để **public** để dùng Pages miễn phí. Repo chỉ chứa code, còn key nằm trong Script Properties và trên điện thoại của bạn.
 
 1. Dán lại `Code.gs` đã cập nhật vào Apps Script → **Deploy → Manage deployments → ✏️ → New version → Deploy** (URL giữ nguyên).

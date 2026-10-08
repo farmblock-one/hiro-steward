@@ -27,11 +27,7 @@ function handleText_(text, source) {
   if (habit && !(parsed && parsed.hasUnit)) return logHabit_(habit.name, text, past.date);
 
   // 3. Chi tiêu: "cafe 35k", "hôm qua đổ xăng 80k"
-  if (parsed) {
-    const desc = parsed.rest;
-    const category = guessCategory_(desc) || aiCategory_(desc) || DEFAULT_CATEGORY;
-    return logExpense_({ amount: parsed.amount, category, desc, source, raw: text, date: past.date });
-  }
+  if (parsed) return addExpenseText_(text, source);
 
   // 4. Câu tự do -> AI
   if (aiEnabled_()) {

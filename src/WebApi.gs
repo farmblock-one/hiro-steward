@@ -45,6 +45,27 @@ function api_quickAdd(key, text) {
   return handleText_(text, 'web');
 }
 
+function api_addExpense(key, text) {
+  auth_(key);
+  const out = addExpenseText_(String(text || ''), 'web');
+  if (!out) throw new Error('Chưa thấy số tiền. Ví dụ: cafe 35k, hôm qua grab 120k, tiền nhà 5tr');
+  return out;
+}
+
+function api_undoExpense(key) {
+  auth_(key);
+  return undoLastExpense_();
+}
+
+function api_addLeadText(key, text) {
+  auth_(key);
+  const f = parseLeadText_(String(text || ''));
+  if (!f.name) throw new Error('Nhập tên lead. Ví dụ: ABC Corp | 50tr | gửi báo giá | thứ 6');
+  const r = createLead_(f);
+  if (r.error) throw new Error(r.error);
+  return addLeadReply_(r.id);
+}
+
 function api_toggleHabit(key, name, date) {
   auth_(key);
   return toggleHabit_(name, date);
@@ -122,6 +143,9 @@ function api_leadHistory(key, id) {
 const API_FUNCTIONS = {
   dashboard: api_dashboard,
   quickAdd: api_quickAdd,
+  addExpense: api_addExpense,
+  undoExpense: api_undoExpense,
+  addLeadText: api_addLeadText,
   toggleHabit: api_toggleHabit,
   addHabit: api_addHabit,
   addTask: api_addTask,

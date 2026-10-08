@@ -301,6 +301,15 @@ function logExpense_({ amount, category, desc, source, raw, date }) {
     `\nHôm nay: ${money_(s.today)} | Tháng này: ${money_(s.month)}`;
 }
 
+/** “hôm qua cafe 35k” -> ghi 1 khoản chi. Trả về null nếu không thấy số tiền. */
+function addExpenseText_(text, source) {
+  const past = extractPastDay_(text);
+  const parsed = parseAmount_(past.text);
+  if (!parsed) return null;
+  const category = guessCategory_(parsed.rest) || aiCategory_(parsed.rest) || DEFAULT_CATEGORY;
+  return logExpense_({ amount: parsed.amount, category, desc: parsed.rest, source, raw: text, date: past.date });
+}
+
 function undoLastExpense_() {
   const sh = sheet_(SHEETS.EXPENSES);
   const last = sh.getLastRow();
@@ -955,11 +964,7 @@ function handleText_(text, source) {
   if (habit && !(parsed && parsed.hasUnit)) return logHabit_(habit.name, text, past.date);
 
   // 3. Chi tiêu: "cafe 35k", "hôm qua đổ xăng 80k"
-  if (parsed) {
-    const desc = parsed.rest;
-    const category = guessCategory_(desc) || aiCategory_(desc) || DEFAULT_CATEGORY;
-    return logExpense_({ amount: parsed.amount, category, desc, source, raw: text, date: past.date });
-  }
+  if (parsed) return addExpenseText_(text, source);
 
   // 4. Câu tự do -> AI
   if (aiEnabled_()) {
@@ -1131,6 +1136,27 @@ function api_quickAdd(key, text) {
   return handleText_(text, 'web');
 }
 
+function api_addExpense(key, text) {
+  auth_(key);
+  const out = addExpenseText_(String(text || ''), 'web');
+  if (!out) throw new Error('Chưa thấy số tiền. Ví dụ: cafe 35k, hôm qua grab 120k, tiền nhà 5tr');
+  return out;
+}
+
+function api_undoExpense(key) {
+  auth_(key);
+  return undoLastExpense_();
+}
+
+function api_addLeadText(key, text) {
+  auth_(key);
+  const f = parseLeadText_(String(text || ''));
+  if (!f.name) throw new Error('Nhập tên lead. Ví dụ: ABC Corp | 50tr | gửi báo giá | thứ 6');
+  const r = createLead_(f);
+  if (r.error) throw new Error(r.error);
+  return addLeadReply_(r.id);
+}
+
 function api_toggleHabit(key, name, date) {
   auth_(key);
   return toggleHabit_(name, date);
@@ -1208,6 +1234,9 @@ function api_leadHistory(key, id) {
 const API_FUNCTIONS = {
   dashboard: api_dashboard,
   quickAdd: api_quickAdd,
+  addExpense: api_addExpense,
+  undoExpense: api_undoExpense,
+  addLeadText: api_addLeadText,
   toggleHabit: api_toggleHabit,
   addHabit: api_addHabit,
   addTask: api_addTask,
