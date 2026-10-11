@@ -35,7 +35,7 @@ function load(files) {
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] ?? null, setProperty: (k, v) => { props[k] = v; }, getProperties: () => props }) },
     ScriptApp: {
       getOAuthToken: () => 'test-token', _triggers: [],
-      newTrigger(fn) { const o = { fn, after() { return o; }, timeBased() { return o; }, everyDays() { return o; }, atHour() { return o; }, inTimezone() { return o; },
+      newTrigger(fn) { const o = { fn, after() { return o; }, timeBased() { return o; }, everyDays() { return o; }, everyMinutes() { return o; }, atHour() { return o; }, inTimezone() { return o; },
         create() { ctx.ScriptApp._triggers.push({ getHandlerFunction: () => fn, fn }); return o; } }; return o; },
       getProjectTriggers: () => ctx.ScriptApp._triggers, deleteTrigger(t) { ctx.ScriptApp._triggers = ctx.ScriptApp._triggers.filter(x => x !== t); },
       getService: () => ({ getUrl: () => 'https://script.google.com/macros/s/X/exec' }),

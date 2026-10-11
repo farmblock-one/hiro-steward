@@ -159,11 +159,22 @@ Giao diện nằm ở `docs/` (HTML tĩnh, theme mèo cam 🐱 + tiền 🪙, t�
 
 Link cũ `…/exec?key=…` vẫn dùng được song song.
 
+## Telegram: webhook hay polling?
+
+Mặc định bot nhận tin qua **webhook**. Nhược điểm của Apps Script: web app luôn trả mã 302, Telegram coi mọi tin là lỗi nên gửi lại nhiều lần, và có thể giao trễ hoặc không giao (nhật ký `diagnose` hiện `Wrong response from the webhook: 302 Found`). Web app còn phải để “Bất kỳ ai”, mà tài khoản Google Workspace của công ty có thể chặn điều này.
+
+**Polling** là cách thay thế: script tự hỏi Telegram mỗi phút. Không cần web app công khai, không có 302, không gửi lại, đổi lại bot trả lời chậm tối đa khoảng 1 phút.
+
+- Bật: chạy hàm **`usePolling`** một lần (xoá webhook, bật trigger mỗi phút; tin nhắn cũ chưa xử lý bị bỏ). Trigger chạy **code mới nhất bạn lưu**, không cần “Phiên bản mới”.
+- Quay lại webhook: chạy **`setWebhook`** (tự tắt trigger polling).
+- Kiểm tra: `diagnose` in ra chế độ đang dùng. Mỗi lượt polling chỉ mất khoảng 1 giây, nằm xa dưới hạn mức thời gian trigger của Apps Script.
+- Web app trên điện thoại (giao diện) vẫn cần “Bất kỳ ai” để gọi API, polling chỉ thay phần Telegram.
+
 ## Phát triển
 
 ```bash
 npm run build   # sinh src/Index.html (bản trong Apps Script) và dist/Code.gs (1 file để dán) từ docs/index.html + src/*.gs
-npm test        # test parser tiền/ngày và toàn bộ luồng lead (có Google Sheet giả)
+npm test        # test parser tiền/ngày, luồng lead, email và Telegram (có Google Sheet, Gmail, Gemini, Telegram giả)
 ```
 
 - Giao diện chỉ sửa ở **`docs/index.html`**; `src/Index.html` và `dist/Code.gs` là file sinh tự động, đừng sửa tay.
@@ -194,7 +205,7 @@ src/
 docs/             web app (nguồn duy nhất) cho GitHub Pages, gọi API qua fetch
 dist/Code.gs      file sinh tự động: toàn bộ .gs gộp thành 1 để dán vào Apps Script
 scripts/build.js  sinh src/Index.html và dist/Code.gs
-test/             parse.test.js, leads.test.js, email.test.js, harness.js (Sheet giả)
+test/             parse.test.js, leads.test.js, email.test.js, telegram.test.js, harness.js (Sheet giả)
 ```
 
 Muốn thêm danh mục hoặc từ khoá thì sửa `CATEGORIES` trong `Config.gs`.

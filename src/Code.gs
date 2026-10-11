@@ -70,9 +70,7 @@ function setup() {
   console.log('WEB_KEY: ' + prop_('WEB_KEY'));
 }
 
-/** Đăng ký webhook với Telegram. Chạy sau khi Deploy web app và đặt WEB_APP_URL. */
-function setWebhook() {
-  const r = tg_('setWebhook', { url: webhookUrl_(), drop_pending_updates: true, allowed_updates: ['message'] });
+function setBotCommands_() {
   tg_('setMyCommands', { commands: [
     { command: 'today', description: 'Tóm tắt hôm nay' },
     { command: 'thongke', description: 'Chi tiêu tháng này (thêm "tuan" cho tuần)' },
@@ -92,6 +90,14 @@ function setWebhook() {
     { command: 'app', description: 'Mở web app' },
     { command: 'help', description: 'Hướng dẫn' },
   ] });
+}
+
+/** Đăng ký webhook với Telegram. Chạy sau khi Deploy web app và đặt WEB_APP_URL. */
+function setWebhook() {
+  ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'pollTelegram').forEach(t => ScriptApp.deleteTrigger(t));
+  setProp_('TELEGRAM_MODE', 'webhook');
+  const r = tg_('setWebhook', { url: webhookUrl_(), drop_pending_updates: true, allowed_updates: ['message'] });
+  setBotCommands_();
   console.log(JSON.stringify(r));
   const wi = tg_('getWebhookInfo');
   if (wi.result && wi.result.url) wi.result.url = wi.result.url.replace(/(secret=).*/, '$1***đã-ẩn'); // đừng để lộ secret trong nhật ký/ảnh chụp
@@ -128,6 +134,8 @@ function diagnose() {
   if (!p.TELEGRAM_TOKEN) return;
   const me = tg_('getMe');
   console.log(me.ok ? `Bot: @${me.result.username}` : '❌ TELEGRAM_TOKEN sai');
+  console.log('Chế độ nhận tin Telegram: ' + (p.TELEGRAM_MODE === 'poll' ? 'POLLING (script tự hỏi Telegram mỗi phút)' : 'WEBHOOK'));
+  if (p.TELEGRAM_MODE === 'poll') console.log(ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'pollTelegram') ? '✅ Trigger pollTelegram đang bật.' : '❌ Thiếu trigger pollTelegram. Chạy lại usePolling.');
   const info = tg_('getWebhookInfo').result || {};
   console.log(`Webhook URL: ${info.url ? info.url.replace(/(secret=).*/, '$1***đã-ẩn') : '❌ CHƯA ĐẶT (chạy setWebhook)'}`);
   console.log(`Tin đang chờ: ${info.pending_update_count}`);
@@ -136,7 +144,7 @@ function diagnose() {
     console.log(`Lỗi gần nhất từ Telegram: ${info.last_error_message}` + (ago != null ? ` (cách đây ${ago} phút)` : ''));
   }
   const registered = String(info.url || '').split('?')[0], configured = String(p.WEB_APP_URL || '').trim();
-  if (registered && configured) console.log(registered === configured ? '✅ Telegram đang trỏ đúng WEB_APP_URL.' : '❌ Telegram đang trỏ tới địa chỉ KHÁC WEB_APP_URL. Chạy lại setWebhook.');
+  if (p.TELEGRAM_MODE !== 'poll' && registered && configured) console.log(registered === configured ? '✅ Telegram đang trỏ đúng WEB_APP_URL.' : '❌ Telegram đang trỏ tới địa chỉ KHÁC WEB_APP_URL. Chạy lại setWebhook.');
   if (p.ALLOWED_CHAT_ID) {
     const r = tg_('sendMessage', { chat_id: p.ALLOWED_CHAT_ID.trim(), text: '🔧 Test từ diagnose(): bot gửi được tin cho bạn.' });
     console.log(r.ok ? 'Gửi tin thử: OK' : `❌ Gửi tin thử thất bại: ${r.description}`);

@@ -85,3 +85,41 @@ function webAppLink_() {
   if (pages && api) return `${pages}#key=${encodeURIComponent(key)}&api=${encodeURIComponent(api)}`;
   return api ? `${api}?key=${encodeURIComponent(key)}` : null;
 }
+
+// ---------- Chế độ polling (thay cho webhook) ----------
+// Webhook của Apps Script luôn trả 302 nên Telegram coi mọi tin là lỗi, gửi lại và có thể trễ hoặc không giao.
+// Polling thì script tự hỏi Telegram mỗi phút: không cần web app công khai, không có 302, trả lời chậm tối đa ~1 phút.
+
+/** Chuyển sang polling: xoá webhook, bật trigger mỗi phút. Quay lại webhook bằng setWebhook. */
+function usePolling() {
+  const r = tg_('deleteWebhook', { drop_pending_updates: true });
+  if (!r.ok) throw new Error('Không xoá được webhook: ' + (r.description || ''));
+  setProp_('TELEGRAM_MODE', 'poll');
+  setProp_('TG_OFFSET', '0');
+  setProp_('TG_POLL_BUSY', '0');
+  setBotCommands_();
+  ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'pollTelegram').forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('pollTelegram').timeBased().everyMinutes(1).create();
+  console.log('✅ Đã chuyển sang polling. Nhắn /help cho bot, tối đa ~1 phút sẽ có trả lời. Tin nhắn cũ chưa xử lý đã bị bỏ.');
+}
+
+/** Chạy mỗi phút: lấy tin mới từ Telegram và xử lý. Mỗi tin chỉ xử lý một lần (lưu mốc trước khi xử lý). */
+function pollTelegram() {
+  if (prop_('TELEGRAM_MODE') !== 'poll') return;
+  const busy = Number(prop_('TG_POLL_BUSY')) || 0;
+  if (Date.now() - busy < 55000) return; // một lượt trước còn đang chạy
+  setProp_('TG_POLL_BUSY', Date.now());
+  try {
+    const offset = Number(prop_('TG_OFFSET')) || 0;
+    const r = tg_('getUpdates', { offset: offset || undefined, timeout: 0, limit: 20, allowed_updates: ['message'] });
+    const updates = r.ok ? r.result || [] : [];
+    if (!updates.length) return;
+    setProp_('TG_OFFSET', updates[updates.length - 1].update_id + 1);
+    updates.forEach(u => {
+      try { handleUpdate_(u); }
+      catch (err) { console.error(err && err.stack || err); notifyHandlerError_(u, err); }
+    });
+  } finally {
+    setProp_('TG_POLL_BUSY', '0');
+  }
+}
