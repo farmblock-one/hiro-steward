@@ -212,6 +212,7 @@ const lm = run('emailScan_()');
 assert.strictEqual(lm.skipped, 0, 'có nhãn thì không bỏ qua luồng nào');
 assert.ok(rows().filter(r => r.thread === 'th3').every(r => r.status !== 'không liên quan'), 'có nhãn thì không tự loại');
 assert.ok(run('scheduleEmailChain_({ pending: 3, errors: [] })') === true && run('scheduleEmailChain_({ pending: 0, errors: [] })') === false);
+assert.ok(run("scheduleEmailChain_({ pending: 3, errors: ['429'] })") === true, 'lỗi quota vẫn tự quét tiếp');
 delete env.props.EMAIL_LABEL;
 
 // --- 7a. Chất lượng gợi ý: nội bộ, tên miền không phải công ty, văn phong ---

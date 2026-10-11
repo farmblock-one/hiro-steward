@@ -831,7 +831,7 @@ function leadAttentionText_() {
  */
 
 const GMAIL_API = 'https://gmail.googleapis.com/gmail/v1/users/me/';
-const EMAIL_DEFAULTS = { DAYS: 14, MAX_THREADS: 40, LABEL_DAYS: 30, LABEL_MAX_THREADS: 200, PER_RUN: 12, SLEEP_MS: 6000, THREAD_CHARS: 6000, MSG_CHARS: 1200, BUDGET_MS: 270000 };
+const EMAIL_DEFAULTS = { DAYS: 14, MAX_THREADS: 40, LABEL_DAYS: 30, LABEL_MAX_THREADS: 200, PER_RUN: 12, SLEEP_MS: 8000, THREAD_CHARS: 6000, MSG_CHARS: 1200, BUDGET_MS: 270000 };
 const PUBLIC_MAIL_DOMAINS = ['gmail.com', 'googlemail.com', 'outlook.com', 'hotmail.com', 'live.com', 'yahoo.com', 'icloud.com', 'proton.me', 'protonmail.com'];
 const AUTOMATED_SENDER_RE = /(^|[^a-z])(no-?reply|do-?not-?reply|notifications?|mailer-daemon|newsletter|bounces?|alerts?)([^a-z]|$)/i;
 
@@ -1169,7 +1169,7 @@ function emailScanText_(r) {
   const a = emailAttention_();
   const lm = emailLabelMode_();
   let out = `📧 Quét email xong: ${r.threads} luồng${lm ? ` có nhãn “${(prop_('EMAIL_LABEL') || '').trim()}”` : ''} trong ${emailDays_()} ngày, phân tích mới ${r.analyzed}` +
-    (lm ? '' : `, bỏ qua ${r.skipped}`) + (r.pending ? `, còn ${r.pending} luồng chưa đọc (tự quét tiếp sau ~1 phút)` : lm ? ', đã đọc hết, không bỏ sót luồng nào' : '') + '.';
+    (lm ? '' : `, bỏ qua ${r.skipped}`) + (r.pending ? `, còn ${r.pending} luồng chưa đọc (tự quét tiếp sau ~${r.errors.length ? 4 : 1} phút)` : lm ? ', đã đọc hết, không bỏ sót luồng nào' : '') + '.';
   if (r.errors.length) out += '\n⚠️ ' + r.errors.slice(0, 3).join('\n⚠️ ');
   if (a && (a.suggestions.length || a.waitingMe.length)) out += `\n\n${emailAttentionText_()}`;
   return out;
@@ -1184,11 +1184,11 @@ function emailScanNow_() {
 
 /** Còn luồng chưa đọc thì hẹn thêm 1 lượt sau ~1 phút, tối đa 30 lượt liên tiếp. */
 function scheduleEmailChain_(res) {
-  if (!res || res.error || (res.errors && res.errors.length) || !(res.pending > 0)) { setProp_('EMAIL_CHAIN', '0'); return false; }
+  if (!res || res.error || !(res.pending > 0)) { setProp_('EMAIL_CHAIN', '0'); return false; }
   const n = Number(prop_('EMAIL_CHAIN')) || 0;
   if (n >= 30) { setProp_('EMAIL_CHAIN', '0'); return false; }
   setProp_('EMAIL_CHAIN', n + 1);
-  ScriptApp.newTrigger('emailScanJob').timeBased().after(60 * 1000).create();
+  ScriptApp.newTrigger('emailScanJob').timeBased().after((res.errors && res.errors.length ? 4 : 1) * 60 * 1000).create(); // gặp lỗi (thường 429 quota Gemini) thì chờ lâu hơn
   return true;
 }
 
