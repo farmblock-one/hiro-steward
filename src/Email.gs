@@ -345,14 +345,14 @@ function emailScan_(opts) {
   return res;
 }
 
-function emailScanText_(r) {
+function emailScanText_(r, brief) {
   if (r.error) return '📧 ' + r.error;
   const a = emailAttention_();
   const lm = emailLabelMode_();
   let out = `📧 Quét email xong: ${r.threads} luồng${lm ? ` có nhãn “${(prop_('EMAIL_LABEL') || '').trim()}”` : ''} trong ${emailDays_()} ngày, phân tích mới ${r.analyzed}` +
     (lm ? '' : `, bỏ qua ${r.skipped}`) + (r.pending ? `, còn ${r.pending} luồng chưa đọc (tự quét tiếp sau ~${r.errors.length ? 4 : 1} phút)` : lm ? ', đã đọc hết, không bỏ sót luồng nào' : '') + '.';
   if (r.errors.length) out += '\n⚠️ ' + r.errors.slice(0, 3).join('\n⚠️ ');
-  if (a && (a.suggestions.length || a.waitingMe.length)) out += `\n\n${emailAttentionText_()}`;
+  if (!brief && a && (a.suggestions.length || a.waitingMe.length)) out += `\n\n${emailAttentionText_()}`;
   return out;
 }
 
@@ -366,6 +366,10 @@ function emailScanNow_() {
 /** Còn luồng chưa đọc thì hẹn thêm 1 lượt sau ~1 phút, tối đa 30 lượt liên tiếp. */
 function scheduleEmailChain_(res) {
   if (!res || res.error || !(res.pending > 0)) { setProp_('EMAIL_CHAIN', '0'); return false; }
+  // Hai lượt liên tiếp không đọc thêm được luồng nào mà còn lỗi (thường là hết hạn mức Gemini): dừng, đừng spam.
+  const stall = res.analyzed === 0 && res.errors && res.errors.length ? (Number(prop_('EMAIL_STALL')) || 0) + 1 : 0;
+  setProp_('EMAIL_STALL', stall);
+  if (stall >= 2) { setProp_('EMAIL_CHAIN', '0'); setProp_('EMAIL_STALL', '0'); return 'stalled'; }
   const n = Number(prop_('EMAIL_CHAIN')) || 0;
   if (n >= 30) { setProp_('EMAIL_CHAIN', '0'); return false; }
   setProp_('EMAIL_CHAIN', n + 1);
@@ -377,7 +381,12 @@ function emailScanJob() {
   ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'emailScanJob').forEach(t => ScriptApp.deleteTrigger(t));
   const chatId = (prop_('ALLOWED_CHAT_ID') || '').trim();
   let text;
-  try { const r = emailScan_(); scheduleEmailChain_(r); text = emailScanText_(r); }
+  try {
+    const r = emailScan_(), chain = scheduleEmailChain_(r);
+    if (chain === true && r.analyzed === 0) return; // lượt thử lại im lặng, chưa có gì mới để báo
+    text = emailScanText_(r, chain === true);
+    if (chain === 'stalled') text += '\n\n⏸ Gemini vẫn từ chối (429, thường là hết hạn mức free theo phút/ngày) nên mình tạm dừng, không spam bạn nữa. Còn ' + r.pending + ' luồng chưa đọc. Mình sẽ thử lại lúc 7h sáng mai, hoặc nhắn /email khi muốn thử lại. Muốn hết hẳn: bật billing và đặt GEMINI_EMAIL_KEY.';
+  }
   catch (e) { text = '📧 Quét email gặp lỗi: ' + String(e && e.message || e).slice(0, 300); } // luôn có tin báo, không im lặng
   if (chatId) send_(chatId, text);
 }
