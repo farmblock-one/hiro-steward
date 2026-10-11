@@ -1380,7 +1380,9 @@ function gemini_(parts, asJson, opts) {
   });
   if (res.getResponseCode() !== 200) {
     console.error('Gemini error', res.getResponseCode(), res.getContentText().slice(0, 300));
-    GEMINI_STATE.lastError = 'HTTP ' + res.getResponseCode();
+    let why = '';
+    try { why = JSON.parse(res.getContentText()).error.message || ''; } catch (e) { /* không phải JSON */ }
+    GEMINI_STATE.lastError = `HTTP ${res.getResponseCode()} (model ${model})` + (why ? ': ' + why.slice(0, 160) : '');
     return null;
   }
   const data = JSON.parse(res.getContentText());
@@ -1426,6 +1428,22 @@ function aiCategory_(desc) {
   const r = gemini_([{ text: `Khoản chi "${desc}" thuộc danh mục nào trong ${JSON.stringify(cats)}? ` +
       'Trả về JSON {"category": "..."}' }], true);
   return r && cats.indexOf(r.category) >= 0 ? r.category : null;
+}
+
+/**
+ * Chạy tay để kiểm tra key + model Gemini dành cho email: in ra model đang dùng, kết quả gọi thử,
+ * và nếu model không tồn tại thì liệt kê các model mà key này dùng được.
+ */
+function testGeminiEmail() {
+  const o = emailGeminiOpts_();
+  console.log(`Key email: ${prop_('GEMINI_EMAIL_KEY') ? 'GEMINI_EMAIL_KEY' : 'GEMINI_API_KEY (chưa đặt key riêng)'} · model: ${o.model || prop_('GEMINI_MODEL') || 'gemini-2.5-flash'}`);
+  const r = gemini_([{ text: 'Trả về JSON {"ok":true}' }], true, o);
+  if (r) return console.log('✅ Gemini trả lời bình thường: ' + JSON.stringify(r));
+  console.log('❌ ' + GEMINI_STATE.lastError);
+  const res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=100', { headers: { 'x-goog-api-key': o.key || '' }, muteHttpExceptions: true });
+  if (res.getResponseCode() !== 200) return console.log('Không liệt kê được model: HTTP ' + res.getResponseCode() + ' ' + res.getContentText().slice(0, 200));
+  const names = (JSON.parse(res.getContentText()).models || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent')).map(m => m.name.replace('models/', ''));
+  console.log('Model dùng được với key này (chép đúng vào GEMINI_EMAIL_MODEL):\n' + names.filter(n => /flash/.test(n)).join('\n'));
 }
 
 
