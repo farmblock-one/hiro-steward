@@ -194,7 +194,7 @@ assert.ok(lq.includes('-category:promotions') && !lq.includes('labelIds='), lq);
 env.props.EMAIL_LABEL = ' 2. lead '; ctx.__calls.length = 0; run('emailScan_()');
 lq = decodeURIComponent(ctx.__calls.find(c => c.url.includes('/threads?')).url);
 assert.ok(lq.includes('labelIds=Label_7') && !lq.includes('category:') && !lq.includes('label:'), lq);
-assert.ok(ctx.__calls.some(c => c.url.endsWith('/labels')) && ctx.__calls.every(c => c.method === 'get'));
+assert.ok(ctx.__calls.some(c => c.url.endsWith('/labels')) && ctx.__calls.filter(c => c.url.includes('gmail.googleapis')).every(c => c.method === 'get'));
 env.props.EMAIL_LABEL = 'khách/vip'; ctx.__calls.length = 0; run('emailScan_()');
 assert.ok(decodeURIComponent(ctx.__calls.find(c => c.url.includes('/threads?')).url).includes('labelIds=Label_8'), 'nhãn con Cha/Con');
 // Nhãn sai: báo lỗi kèm danh sách nhãn thật và không tải luồng nào
@@ -203,6 +203,15 @@ const badLabel = run('emailScan_()');
 assert.ok(badLabel.errors.join(' ').includes('Không thấy nhãn') && badLabel.errors.join(' ').includes('2. Lead') && badLabel.errors.join(' ').includes('Khách/VIP'), j(badLabel));
 assert.ok(!ctx.__calls.some(c => c.url.includes('/threads')), 'nhãn sai thì không đọc luồng nào');
 run('emailListLabels()');
+// Chế độ nhãn: đọc hết, không bỏ qua, AI nói không liên quan vẫn là đề xuất, luồng 'không liên quan' cũ được đọc lại
+env.props.EMAIL_LABEL = '2. Lead';
+assert.strictEqual(run('emailDays_()'), 30); assert.strictEqual(run('emailMaxThreads_()'), 200);
+geminiReply = () => Object.assign({}, base, { relevant: false });
+mailbox = ['th3']; prompts.length = 0;
+const lm = run('emailScan_()');
+assert.strictEqual(lm.skipped, 0, 'có nhãn thì không bỏ qua luồng nào');
+assert.ok(rows().filter(r => r.thread === 'th3').every(r => r.status !== 'không liên quan'), 'có nhãn thì không tự loại');
+assert.ok(run('scheduleEmailChain_({ pending: 3, errors: [] })') === true && run('scheduleEmailChain_({ pending: 0, errors: [] })') === false);
 delete env.props.EMAIL_LABEL;
 
 // --- 7a. Chất lượng gợi ý: nội bộ, tên miền không phải công ty, văn phong ---
