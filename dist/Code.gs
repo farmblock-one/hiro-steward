@@ -1406,11 +1406,35 @@ function tg_(method, payload) {
   return data;
 }
 
-function send_(chatId, text) {
-  // Telegram giới hạn 4096 ký tự/tin.
-  for (let i = 0; i < text.length; i += 4000) {
-    tg_('sendMessage', { chat_id: chatId, text: text.slice(i, i + 4000), disable_web_page_preview: true });
+/** Cắt tin dài theo ranh giới dòng, không bao giờ cắt giữa một emoji (cặp ký tự thay thế). */
+function chunkText_(text, size) {
+  const out = []; let i = 0;
+  while (i < text.length) {
+    let end = Math.min(i + size, text.length);
+    if (end < text.length) {
+      const nl = text.lastIndexOf('\n', end);
+      if (nl > i + size / 2) end = nl + 1;
+      const c = text.charCodeAt(end - 1);
+      if (c >= 0xd800 && c <= 0xdbff) end--;
+    }
+    out.push(text.slice(i, end)); i = end;
   }
+  return out;
+}
+
+/**
+ * Gửi tin cho Telegram (tối đa 4096 ký tự mỗi tin). Nếu Telegram từ chối, thử lại bản đã bỏ emoji/ký tự đặc biệt
+ * để tin chắc chắn tới được, và ghi rõ lý do từ chối vào nhật ký.
+ */
+function send_(chatId, text) {
+  chunkText_(String(text), 4000).forEach(chunk => {
+    let r = tg_('sendMessage', { chat_id: chatId, text: chunk, disable_web_page_preview: true });
+    if (!r.ok) {
+      console.error('Telegram từ chối tin, thử lại không emoji: ' + (r.description || ''));
+      const plain = chunk.replace(/[\u{10000}-\u{10FFFF}\u200d\ufe0f]/gu, '').replace(/[^\S\n]{2,}/g, ' ').trim();
+      r = tg_('sendMessage', { chat_id: chatId, text: plain || '(tin nhắn trống)', disable_web_page_preview: true });
+    }
+  });
 }
 
 function downloadTelegramFile_(fileId) {
@@ -1973,6 +1997,15 @@ function testCommands() {
   ['/emails', '/email'].forEach(c => {
     try { console.log(c + ' → ' + String(handleCommand_(c)).slice(0, 600)); }
     catch (e) { console.log(c + ' ❌ LỖI: ' + (e && e.stack || e)); }
+  });
+}
+
+/** Gửi thử 3 tin tới Telegram và in phản hồi của Telegram (OK hay lý do từ chối). Dùng khi bot “chạy mà không trả lời”. */
+function testSend() {
+  const chatId = (prop_('ALLOWED_CHAT_ID') || '').trim();
+  [['nội dung /emails', handleCommand_('/emails')], ['tin báo quét email', '📧 Mình sẽ quét email chỉ-đọc trong nền, xong sẽ báo kết quả.'], ['tin không emoji', 'Test không emoji']].forEach(x => {
+    const r = tg_('sendMessage', { chat_id: chatId, text: x[1], disable_web_page_preview: true });
+    console.log(`${x[0]} → ${r.ok ? '✅ Telegram đã nhận' : '❌ Telegram từ chối: ' + r.description}`);
   });
 }
 

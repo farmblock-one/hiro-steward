@@ -151,6 +151,15 @@ function testCommands() {
   });
 }
 
+/** Gửi thử 3 tin tới Telegram và in phản hồi của Telegram (OK hay lý do từ chối). Dùng khi bot “chạy mà không trả lời”. */
+function testSend() {
+  const chatId = (prop_('ALLOWED_CHAT_ID') || '').trim();
+  [['nội dung /emails', handleCommand_('/emails')], ['tin báo quét email', '📧 Mình sẽ quét email chỉ-đọc trong nền, xong sẽ báo kết quả.'], ['tin không emoji', 'Test không emoji']].forEach(x => {
+    const r = tg_('sendMessage', { chat_id: chatId, text: x[1], disable_web_page_preview: true });
+    console.log(`${x[0]} → ${r.ok ? '✅ Telegram đã nhận' : '❌ Telegram từ chối: ' + r.description}`);
+  });
+}
+
 /** Giả lập Telegram gọi webhook để biết lỗi nằm ở code hay ở cấu hình deploy. */
 function testWebhook() {
   const chatId = Number((prop_('ALLOWED_CHAT_ID') || '').trim());

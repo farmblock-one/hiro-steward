@@ -25,6 +25,7 @@ const threads = {
 let mailbox = ['th1', 'th2', 'th3', 'th4', 'th5'];
 let geminiReply = null;
 const telegramSent = [];
+const telegramRejectAstral = { on: false };
 const prompts = [];
 env.setFetch((url, o) => {
   if (url.startsWith('https://gmail.googleapis.com/')) {
@@ -42,7 +43,11 @@ env.setFetch((url, o) => {
     const r = geminiReply(p); if (r.code) return r;
     return { body: { candidates: [{ content: { parts: [{ text: JSON.stringify(r) }] } }] } };
   }
-  if (url.includes('api.telegram.org')) { telegramSent.push(JSON.parse(o.payload).text); return { body: { ok: true } }; }
+  if (url.includes('api.telegram.org')) {
+    const t = JSON.parse(o.payload).text;
+    if (telegramRejectAstral.on && /[\u{10000}-\u{10FFFF}]/u.test(t)) return { body: { ok: false, description: 'Bad Request: simulated rejection' } };
+    telegramSent.push(t); return { body: { ok: true } };
+  }
   throw new Error('URL lạ: ' + url);
 });
 const base = { relevant: true, company: 'ABC Corp', contact: 'Lan Nguyen', contact_email: 'lan@abccorp.vn', summary: 'Khách xin báo giá gói B cho 50 người.',
@@ -243,6 +248,20 @@ telegramSent.length = 0;
 run(`doPost(${j({ parameter: { secret: 'sec' }, postData: { contents: j({ update_id: 987655, message: { chat: { id: 555 }, text: '/email' } }) } })})`);
 assert.strictEqual(telegramSent.length, 0, 'chỉ báo lỗi cho chat được phép');
 ctx.ScriptApp.newTrigger = realNewTrigger;
+
+// --- 7f. Gửi Telegram chắc chắn: tin bị từ chối thì gửi lại bản không emoji; tin dài không bị cắt giữa emoji ---
+telegramRejectAstral.on = true; telegramSent.length = 0;
+run(`send_('1', '🟠 #1 Khang B\\n📧 dòng hai ➜ ok')`);
+assert.strictEqual(telegramSent.length, 1, 'có gửi lại'); assert.ok(!/[\u{10000}-\u{10FFFF}]/u.test(telegramSent[0]) && telegramSent[0].includes('Khang B'), telegramSent[0]);
+telegramRejectAstral.on = false; telegramSent.length = 0;
+const longText = 'a'.repeat(3999) + '😀' + 'b'.repeat(10);
+run(`send_('1', ${j(longText)})`);
+assert.strictEqual(telegramSent.join(''), longText, 'ghép lại đúng nguyên văn');
+assert.ok(telegramSent.every(c => !/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(c)), 'không có nửa emoji');
+assert.ok(telegramSent.every(c => c.length <= 4000));
+const manyLines = Array.from({ length: 600 }, (_, i) => 'dòng ' + i + ' ' + 'x'.repeat(20)).join('\n');
+telegramSent.length = 0; run(`send_('1', ${j(manyLines)})`);
+assert.strictEqual(telegramSent.join(''), manyLines); assert.ok(telegramSent.length > 1 && telegramSent.every(c => c.length <= 4000));
 
 // --- 8. Quyền: manifest chỉ xin gmail.readonly ---
 const manifest = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '../src/appsscript.json'), 'utf8'));
