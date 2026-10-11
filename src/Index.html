@@ -112,6 +112,13 @@
     .due { font-size: 12px; font-weight: 800; padding: 2px 8px; border-radius: 8px; background: var(--green-soft); color: var(--green); white-space: nowrap; }
     .due.overdue { background: var(--danger-soft); color: var(--danger); } .due.today { background: var(--warn-soft); color: var(--cat-dark); }
     .due.none { background: var(--line); color: var(--muted); }
+    .mail { background: var(--card); border: 1px solid var(--line); border-left: 5px solid var(--gold); border-radius: 18px; padding: 12px 14px; margin-top: 10px; box-shadow: var(--shadow); }
+    .mail.me { border-left-color: var(--danger); } .mail.them { border-left-color: var(--muted); border-left-style: dashed; }
+    .mail .sum { margin-top: 4px; font-size: 14px; }
+    .badge { font-size: 12px; font-weight: 800; padding: 2px 9px; border-radius: 99px; background: var(--warn-soft); color: var(--cat-dark); white-space: nowrap; }
+    .badge.hot { background: var(--danger-soft); color: var(--danger); }
+    .actions a { flex: 1; text-align: center; background: var(--cat-soft); color: var(--cat-dark); font-weight: 700; font-size: 13px; padding: 9px 4px; border-radius: 12px; text-decoration: none; }
+    .mail-off { margin-top: 12px; }
     .actions { display: flex; gap: 6px; margin-top: 10px; }
     .actions button { flex: 1; background: var(--cat-soft); color: var(--cat-dark); font-weight: 700; font-size: 13px; padding: 9px 4px; border-radius: 12px; }
     .actions button.main { flex: 2; background: var(--cat); color: #fff; }
@@ -218,6 +225,7 @@
         <button class="btn">Thêm</button>
       </form>
       <div class="muted hint">Gõ nhanh: tên | giá trị | việc tiếp theo | hạn (ngăn cách bằng |), hoặc bấm “Biểu mẫu” để nhập từng ô.</div>
+      <div id="emailBox"></div>
       <div class="tiles" id="leadStats" style="margin-top:14px"></div>
       <div class="chips" id="stageChips"></div>
       <div id="leadList"></div>
@@ -333,7 +341,7 @@
 
   function render() {
     $('#mood').textContent = mood();
-    renderLeads(); renderMoney(); renderHabits(); renderTasks();
+    renderLeads(); renderEmail(); renderMoney(); renderHabits(); renderTasks();
   }
 
   function dueBadge(l) {
@@ -376,6 +384,40 @@
       return items.length ? `<h2>${title} · ${items.length}</h2>${items.map(leadCard).join('')}` : '';
     }).join('');
     $('#leadList').innerHTML = html || catEmpty('Chưa có lead nào. Bấm + để thêm con cá đầu tiên 🐟');
+  }
+
+  function dueTxt(due) {
+    const d = dayDiff(due, state.today);
+    return d < 0 ? `quá hạn ${-d} ngày` : d === 0 ? 'hôm nay' : d === 1 ? 'mai' : `${dow(due)} ${ddmm(due)}`;
+  }
+
+  // Gợi ý do AI rút ra từ email (chỉ-đọc). Web chỉ nhận bản tóm tắt, không bao giờ nhận nội dung email.
+  function renderEmail() {
+    const e = state.email || { enabled: false, items: [] }, box = $('#emailBox');
+    if (!e.enabled) {
+      box.innerHTML = `<div class="card mail-off"><b>📧 Từ email</b><div class="muted" style="margin-top:4px">Chưa bật. Cho AI đọc email ở chế độ chỉ đọc để gợi ý lead và lịch follow-up. Xem README mục “Email”.</div></div>`;
+      return;
+    }
+    const items = e.items.map(m => {
+      const wait = m.wait === 'me' ? `<span class="badge ${m.prio === 'high' ? 'hot' : ''}">${m.prio === 'high' ? '🔴' : '🟠'} Khách chờ bạn ${m.waitDays} ngày</span>`
+        : m.wait === 'them' ? `<span class="badge">⏳ Bạn chờ khách ${m.waitDays} ngày</span>` : '';
+      return `<article class="mail ${esc(m.wait)}">
+        <div class="row"><b class="grow">${esc(m.title)}</b>${wait}</div>
+        ${m.summary ? `<div class="sum">${esc(m.summary)}</div>` : ''}
+        <div class="next" style="margin-top:6px">${m.next ? `<span class="t">➜ ${esc(m.next)}</span>` : ''}
+          ${m.due ? `<span class="due ${m.due <= state.today ? 'today' : ''}">${dueTxt(m.due)}</span>` : ''}
+          <span class="pill st-${esc(m.stage)}">${esc(m.stageLabel)}</span>${m.value ? `<span class="val">${use('i-coin')}${short(m.value)}</span>` : ''}
+          ${m.conf && m.conf < 0.5 ? '<span class="pill stale">AI chưa chắc</span>' : ''}</div>
+        ${m.reason ? `<div class="muted" style="margin-top:4px">📅 ${esc(m.reason)}</div>` : ''}
+        <div class="actions">
+          <button class="main" data-mail="accept" data-id="${m.id}">${m.matchLeadId ? `Cập nhật lead “${esc(m.matchLeadName)}”` : 'Thêm vào lead'}</button>
+          <a href="${esc(m.link)}" target="_blank" rel="noopener noreferrer">Mở email ↗</a>
+          <button data-mail="skip" data-id="${m.id}">Bỏ qua</button></div></article>`;
+    }).join('');
+    box.innerHTML = `<div class="row" style="margin-top:18px"><h2 class="grow" style="margin:0 2px">📧 Từ email · ${e.items.length}</h2><button class="btn plain" id="scanMail" type="button">Quét ngay</button></div>
+      <div class="muted hint">AI chỉ đọc, không gửi/xoá/sửa email.${e.lastScan ? ` Quét lần cuối ${esc(e.lastScan)}${e.note ? ' · ' + esc(e.note) : ''}.` : ''}</div>
+      ${items || '<div class="card" style="margin-top:10px"><div class="empty" style="padding:10px">Chưa có gợi ý nào. Bấm “Quét ngay” hoặc đợi lượt quét 7h sáng.</div></div>'}`;
+    const b = $('#scanMail'); if (b) b.onclick = async () => { b.disabled = true; try { toast(await call('api_emailScan')); } catch (err) { toast(errMsg(err), true); } b.disabled = false; };
   }
 
   function renderMoney() {
@@ -508,6 +550,7 @@
       if (d.close != null) closeSheet();
       else if (d.tab) showTab(d.tab);
       else if (d.stage) { stageFilter = d.stage; renderLeads(); }
+      else if (d.mail) { toast(await call(d.mail === 'accept' ? 'api_emailAccept' : 'api_emailDismiss', Number(d.id))); load(); }
       else if (d.dd) { $('#f_due').value = d.dd === 'clear' ? '' : addDays(state.today, Number(d.dd)); }
       else if (d.act) {
         const lead = state.leads.find(l => l.id === Number(d.id));

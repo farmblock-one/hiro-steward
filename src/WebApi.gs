@@ -31,6 +31,7 @@ function api_dashboard(key) {
     leads: sortLeads_(leads_(false)).map(apiLead_),
     stages: LEAD_STAGES.map(s => ({ key: s.key, label: s.label })),
     staleDays: STALE_DAYS,
+    email: emailDashboard_(),
   };
 }
 
@@ -133,6 +134,21 @@ function api_leadSnooze(key, id, days) {
   return snoozeLead_(id, days);
 }
 
+function api_emailScan(key) {
+  auth_(key);
+  return emailScanNow_();
+}
+
+function api_emailAccept(key, id) {
+  auth_(key);
+  return acceptEmailInsight_(id);
+}
+
+function api_emailDismiss(key, id) {
+  auth_(key);
+  return dismissEmailInsight_(id);
+}
+
 function api_leadHistory(key, id) {
   auth_(key);
   return leadHistory_(id);
@@ -155,6 +171,9 @@ const API_FUNCTIONS = {
   leadStage: api_leadStage,
   leadSnooze: api_leadSnooze,
   leadHistory: api_leadHistory,
+  emailScan: api_emailScan,
+  emailAccept: api_emailAccept,
+  emailDismiss: api_emailDismiss,
 };
 
 function apiResponse_(body) {

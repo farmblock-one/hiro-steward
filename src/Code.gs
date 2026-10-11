@@ -73,6 +73,8 @@ function setWebhook() {
     { command: 'log', description: 'Ghi liên hệ: /log 3 đã gọi | gửi HĐ mai' },
     { command: 'next', description: 'Đặt next action: /next 3 họp demo 25/10' },
     { command: 'pipeline', description: 'Phễu bán hàng' },
+    { command: 'emails', description: 'Gợi ý lead/follow-up từ email' },
+    { command: 'email', description: 'Quét email ngay (chỉ đọc)' },
     { command: 'done', description: 'Hoàn thành việc: /done 3' },
     { command: 'app', description: 'Mở web app' },
     { command: 'help', description: 'Hướng dẫn' },
@@ -84,8 +86,9 @@ function setWebhook() {
 /** Nhắc nhở: 8h sáng (lead, việc) và 21h tối (tổng kết ngày). Chạy lại được nhiều lần. */
 function installTriggers() {
   ScriptApp.getProjectTriggers()
-    .filter(t => ['eveningReminder', 'morningReminder'].indexOf(t.getHandlerFunction()) >= 0)
+    .filter(t => ['eveningReminder', 'morningReminder', 'dailyEmailScan'].indexOf(t.getHandlerFunction()) >= 0)
     .forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('dailyEmailScan').timeBased().everyDays(1).atHour(7).inTimezone(TZ).create(); // chỉ chạy khi EMAIL_ENABLED = 1
   ScriptApp.newTrigger('morningReminder').timeBased().everyDays(1).atHour(8).inTimezone(TZ).create();
   ScriptApp.newTrigger('eveningReminder').timeBased().everyDays(1).atHour(21).inTimezone(TZ).create();
 }
@@ -103,8 +106,8 @@ function eveningReminder() {
 /** Kiểm tra cấu hình khi bot không trả lời. Chạy tay rồi xem Nhật ký thực thi. */
 function diagnose() {
   const p = PropertiesService.getScriptProperties().getProperties();
-  ['TELEGRAM_TOKEN', 'ALLOWED_CHAT_ID', 'WEB_APP_URL', 'WEBHOOK_SECRET', 'WEB_KEY', 'SHEET_ID', 'GEMINI_API_KEY'].forEach(k => {
-    const shown = k === 'ALLOWED_CHAT_ID' || k === 'WEB_APP_URL' ? JSON.stringify(p[k]) : 'đã đặt';
+  ['TELEGRAM_TOKEN', 'ALLOWED_CHAT_ID', 'WEB_APP_URL', 'WEBHOOK_SECRET', 'WEB_KEY', 'SHEET_ID', 'GEMINI_API_KEY', 'GEMINI_EMAIL_KEY', 'EMAIL_ENABLED'].forEach(k => {
+    const shown = k === 'ALLOWED_CHAT_ID' || k === 'WEB_APP_URL' || k === 'EMAIL_ENABLED' ? JSON.stringify(p[k]) : 'đã đặt';
     console.log(`${k}: ${p[k] ? shown : '❌ CHƯA ĐẶT'}`);
   });
   if (!p.TELEGRAM_TOKEN) return;

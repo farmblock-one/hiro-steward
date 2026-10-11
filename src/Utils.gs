@@ -18,6 +18,7 @@ function sheet_(def) {
     sh = ss.insertSheet(def.name);
     sh.getRange(1, 1, 1, def.headers.length).setValues([def.headers]).setFontWeight('bold');
     sh.setFrozenRows(1);
+    (def.textCols || []).forEach(c => sh.getRange(1, c, sh.getMaxRows(), 1).setNumberFormat('@'));
   }
   return sh;
 }
@@ -57,6 +58,17 @@ function addDays_(key, n) {
 function weekStart_(key) {
   const dow = (new Date(key + 'T12:00:00Z').getUTCDay() + 6) % 7;
   return addDays_(key, -dow);
+}
+
+/** Số ngày từ a đến b (b - a), cả hai dạng 'yyyy-MM-dd'. */
+function daysBetween_(a, b) {
+  return Math.round((new Date(b + 'T12:00:00Z') - new Date(a + 'T12:00:00Z')) / 86400000);
+}
+
+/** Thứ Bảy/Chủ nhật dời sang thứ Hai. */
+function workday_(key) {
+  const dow = new Date(key + 'T12:00:00Z').getUTCDay();
+  return dow === 6 ? addDays_(key, 2) : dow === 0 ? addDays_(key, 1) : key;
 }
 
 function monthStart_(key) {

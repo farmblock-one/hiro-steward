@@ -1,7 +1,7 @@
 // Chạy: node test/leads.test.js
 const assert = require('assert');
 const { load } = require('./harness');
-const env = load(['Config.gs', 'Utils.gs', 'Finance.gs', 'Habits.gs', 'Tasks.gs', 'Leads.gs', 'AI.gs', 'Telegram.gs', 'Router.gs', 'WebApi.gs']);
+const env = load(['Config.gs', 'Utils.gs', 'Finance.gs', 'Habits.gs', 'Tasks.gs', 'Leads.gs', 'Email.gs', 'AI.gs', 'Telegram.gs', 'Router.gs', 'WebApi.gs']);
 const run = env.run;
 const cmd = t => run(`handleCommand_(${JSON.stringify(t)})`);
 const txt = t => run(`handleText_(${JSON.stringify(t)}, 'text')`);

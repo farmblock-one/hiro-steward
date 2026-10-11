@@ -33,7 +33,7 @@ const n = (html.match(/<\?/g) || []).length;
 if (n !== 1) throw new Error(`Index.html chứa ${n} chuỗi "<?" (chỉ cho phép 1 scriptlet)`);
 write('src/Index.html', '<!-- FILE SINH TỰ ĐỘNG từ docs/index.html bằng `node scripts/build.js`. Đừng sửa tay. -->\n' + html);
 
-const order = ['Config', 'Utils', 'Finance', 'Habits', 'Tasks', 'Leads', 'AI', 'Telegram', 'Router', 'WebApi', 'Code'];
+const order = ['Config', 'Utils', 'Finance', 'Habits', 'Tasks', 'Leads', 'Email', 'AI', 'Telegram', 'Router', 'WebApi', 'Code'];
 const present = fs.readdirSync(path.join(root, 'src')).filter(f => f.endsWith('.gs')).map(f => f.replace('.gs', ''));
 const missing = present.filter(f => !order.includes(f));
 if (missing.length) throw new Error('Thêm vào danh sách order trong scripts/build.js: ' + missing.join(', '));

@@ -94,6 +94,42 @@ Nhắn `/app` cho bot → mở link bằng Safari → nút Share → **Add to Ho
 
 > ⚠️ Mỗi lần sửa code, vào **Deploy → Manage deployments → Edit → Version: New version** để URL `/exec` cũ nhận code mới. Nếu bạn tạo *deployment mới* thì URL sẽ đổi, và phải cập nhật `WEB_APP_URL` rồi chạy lại `setWebhook`.
 
+## Email: AI đọc email (chỉ đọc) để gợi ý lead và lịch follow-up
+
+AI quét email 14 ngày gần nhất và cho bạn biết: **đang có lead nào, next action là gì, nên follow-up khi nào, khách nào đang chờ bạn trả lời**. Kết quả hiện ở tab Lead (mục “📧 Từ email”), lệnh `/emails` và bản tin 8h sáng. Tính năng **tắt mặc định**.
+
+### Vì sao “chỉ đọc” là thật
+- `src/appsscript.json` chỉ xin quyền `gmail.readonly`. Quyền này do Google chặn ở tầng OAuth: dù code có lỗi hay bị email “nói dối”, token không thể gửi, sửa hay xoá email. Mọi lời gọi Gmail đi qua một hàm duy nhất (`gmailGet_`, chỉ dùng GET) và có test kiểm tra điều đó.
+- Màn hình xin quyền của Google phải chỉ có “xem email”. Nếu thấy “gửi”, “quản lý” hay “xoá” thì **dừng lại** và báo mình.
+
+### Dữ liệu đi đâu
+| | |
+|---|---|
+| Nội dung email | Chỉ rời Apps Script để tới **Gemini API**, sau khi đã bỏ phần trích dẫn/chữ ký, che số thẻ/tài khoản dài, mật khẩu, OTP, và cắt ngắn. Bỏ qua email tự động (noreply), email nội bộ cùng tên miền, quảng cáo/mạng xã hội. |
+| Google Sheet | Chỉ lưu **bản tóm tắt** (tab `EmailLeads`), không lưu nội dung email. |
+| Web app | Chỉ nhận bản tóm tắt, không bao giờ nhận nội dung email. |
+| Lead thật | AI chỉ **đề xuất**. Chỉ vào tab `Leads` khi bạn bấm “Thêm vào lead” (hoặc `/addmail`). |
+
+**⚠️ Gemini miễn phí và dữ liệu email.** Theo [điều khoản Gemini API](https://ai.google.dev/gemini-api/terms), với gói miễn phí Google có thể dùng nội dung bạn gửi để cải tiến sản phẩm và người đánh giá có thể đọc, đồng thời khuyên không gửi thông tin nhạy cảm. Gói trả phí thì không dùng dữ liệu để cải tiến. Email khách hàng thường có thông tin bảo mật, nên khuyến nghị: tạo **một API key riêng thuộc project đã bật thanh toán** (chi phí rất nhỏ với model flash) và đặt vào `GEMINI_EMAIL_KEY`. Không đặt thì email dùng chung `GEMINI_API_KEY` (miễn phí). Hãy đối chiếu với thoả thuận bảo mật bạn có với khách hàng/công ty trước khi bật.
+
+### Cách bật
+1. Apps Script → ⚙️ Cài đặt dự án → bật “Hiển thị tệp kê khai appsscript.json” → thay nội dung bằng `src/appsscript.json` mới. Thay `Mã.gs` bằng `dist/Code.gs` mới (và `Index.html` nếu bạn dùng link `script.google.com`).
+2. Chọn hàm **`authorizeEmail`** → Chạy. Màn hình xin quyền sẽ có cảnh báo “Google chưa xác minh ứng dụng” (bình thường với script của chính bạn; `gmail.readonly` là quyền “hạn chế”). Kiểm tra danh sách quyền chỉ có xem email, rồi bấm Nâng cao → Tiếp tục. Nhật ký phải in ra email của bạn.
+3. Script Properties: `EMAIL_ENABLED` = `1`, và (khuyến nghị) `GEMINI_EMAIL_KEY`.
+4. Chạy `installTriggers` lại 1 lần (thêm lượt quét 7h sáng), rồi **Triển khai → Phiên bản mới**.
+5. Nhắn bot `/email`, đợi 1–3 phút, rồi `/emails`.
+
+Tuỳ chọn (Script Properties): `EMAIL_DAYS` (mặc định 14), `EMAIL_MAX_THREADS` (40), `EMAIL_PER_RUN` (12 luồng/lượt, để không vượt hạn mức Gemini), `EMAIL_LABEL` (chỉ quét một nhãn Gmail, vd. `Khách hàng`), `EMAIL_SKIP_DOMAINS` (vd. `congtyban.com, vendor.com`), `EMAIL_INCLUDE_INTERNAL=1` (quét cả email nội bộ), `GEMINI_EMAIL_MODEL`.
+
+### Lệnh
+`/email` quét ngay · `/emails` xem gợi ý · `/addmail 12` thêm vào lead (hoặc cập nhật lead đã có) · `/skipmail 12` bỏ qua. Luồng đã “bỏ qua” chỉ hiện lại nếu khách nhắn thêm và đang chờ bạn.
+
+### Gỡ quyền
+Vào [myaccount.google.com/permissions](https://myaccount.google.com/permissions) và xoá quyền của project Apps Script, hoặc đặt `EMAIL_ENABLED` về trống để dừng quét ngay.
+
+### Giới hạn
+AI có thể sai: luôn kiểm tra trước khi nhấn “Thêm vào lead”. Hạn follow-up là gợi ý dựa trên email cuối và quy tắc trong `emailPrompt_`. Sửa quy tắc đó cho khớp cách bạn làm việc. Tài khoản Google Workspace có thể bị quản trị viên chặn quyền này.
+
 ## Đưa web app lên GitHub Pages (tuỳ chọn, link đẹp + app toàn màn hình trên iPhone)
 
 Mỗi tab có ô nhập riêng: **Lead** (gõ nhanh `tên | giá trị | việc | hạn` hoặc mở biểu mẫu), **Tiền** (`cafe 35k`, có nút xoá khoản vừa ghi), **Thói quen** (chạm dấu chân mỗi ngày), **Việc** (`gửi báo cáo mai #work`).
@@ -132,6 +168,7 @@ src/
   Finance.gs    parse số tiền kiểu VN (35k, 1tr2, 3 lít…), danh mục, thống kê
   Habits.gs     thói quen, streak, check theo ngày
   Leads.gs      lead tracking: giai đoạn, next action, nhắc nhở, phễu
+  Email.gs      AI đọc Gmail chỉ-đọc, đề xuất lead/follow-up (tắt mặc định)
   Tasks.gs      công việc, hạn chót, #dự án
   AI.gs         Gemini: chép voice, phân loại câu tự do
   Telegram.gs   gọi Bot API, xử lý update
@@ -142,7 +179,7 @@ src/
 docs/             web app (nguồn duy nhất) cho GitHub Pages, gọi API qua fetch
 dist/Code.gs      file sinh tự động: toàn bộ .gs gộp thành 1 để dán vào Apps Script
 scripts/build.js  sinh src/Index.html và dist/Code.gs
-test/             parse.test.js, leads.test.js, harness.js (Sheet giả)
+test/             parse.test.js, leads.test.js, email.test.js, harness.js (Sheet giả)
 ```
 
 Muốn thêm danh mục hoặc từ khoá thì sửa `CATEGORIES` trong `Config.gs`.
