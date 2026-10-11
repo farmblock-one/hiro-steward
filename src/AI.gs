@@ -1,7 +1,7 @@
 /**
  * AI qua Gemini API (free tier của Google AI Studio). Không bắt buộc:
  * thiếu GEMINI_API_KEY thì bot vẫn chạy bằng parser quy tắc, chỉ mất voice + hiểu câu tự do.
- * Đổi model bằng Script Property GEMINI_MODEL (vd. gemini-2.0-flash, gemini-2.5-flash-lite).
+ * Đổi model bằng Script Property GEMINI_MODEL (vd. gemini-flash-lite-latest để rẻ hơn).
  */
 
 function aiEnabled_() {
@@ -16,7 +16,7 @@ function gemini_(parts, asJson, opts) {
   const key = opts.key || prop_('GEMINI_API_KEY');
   GEMINI_STATE.lastError = '';
   if (!key) { GEMINI_STATE.lastError = 'chưa có API key'; return null; }
-  const model = opts.model || prop_('GEMINI_MODEL') || 'gemini-2.5-flash';
+  const model = opts.model || prop_('GEMINI_MODEL') || 'gemini-flash-latest';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
   const body = {
     contents: [{ role: 'user', parts }],
@@ -84,7 +84,7 @@ function aiCategory_(desc) {
  */
 function testGeminiEmail() {
   const o = emailGeminiOpts_();
-  console.log(`Key email: ${prop_('GEMINI_EMAIL_KEY') ? 'GEMINI_EMAIL_KEY' : 'GEMINI_API_KEY (chưa đặt key riêng)'} · model: ${o.model || prop_('GEMINI_MODEL') || 'gemini-2.5-flash'}`);
+  console.log(`Key email: ${prop_('GEMINI_EMAIL_KEY') ? 'GEMINI_EMAIL_KEY' : 'GEMINI_API_KEY (chưa đặt key riêng)'} · model: ${o.model || prop_('GEMINI_MODEL') || 'gemini-flash-latest'}`);
   const r = gemini_([{ text: 'Trả về JSON {"ok":true}' }], true, o);
   if (r) return console.log('✅ Gemini trả lời bình thường: ' + JSON.stringify(r));
   console.log('❌ ' + GEMINI_STATE.lastError);

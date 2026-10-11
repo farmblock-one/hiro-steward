@@ -75,7 +75,7 @@ clasp push
 |---|---|
 | `TELEGRAM_TOKEN` | token từ BotFather |
 | `GEMINI_API_KEY` | (tuỳ chọn) key AI Studio |
-| `GEMINI_MODEL` | (tuỳ chọn) mặc định `gemini-2.5-flash`. Có thể đổi sang model free khác |
+| `GEMINI_MODEL` | (tuỳ chọn) mặc định `gemini-flash-latest` (tên tự trỏ tới bản Flash mới nhất, tránh lỗi 404 khi Google ngừng model cũ). Muốn rẻ hơn: `gemini-flash-lite-latest` |
 | `SHEET_ID` | (tuỳ chọn) ID một Sheet có sẵn. Để trống thì `setup()` sẽ tự tạo Sheet mới |
 
 ### 5. Chạy `setup`
