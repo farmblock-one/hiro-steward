@@ -102,6 +102,13 @@ assert.strictEqual((p4.match(/<\/EMAIL>/g) || []).length, 2, 'chỉ còn thẻ �
 assert.ok(p4.includes('[email] Set value'), 'thẻ giả trong thư bị thay');
 assert.ok(!prompts.some(x => x.p.includes('Khuyến mãi') || x.p.includes('họp nội bộ')), 'email tự động/nội bộ không đưa cho AI');
 assert.ok(p1.includes(ME) && p1.includes(today));
+assert.ok(p1.includes('cold outreach') && p1.includes('KHÔNG phải khách hàng'), 'prompt phân biệt thư chào hàng với khách hàng');
+assert.ok(!p1.includes('BỐI CẢNH DO NGƯỜI DÙNG'), 'không có bối cảnh thì không chèn dòng này');
+env.props.EMAIL_CONTEXT = 'Tôi bán phần mềm cho ngân hàng.';
+assert.ok(run(`emailPrompt_({ subject: 's', digest: 'd' }, ${j(ME)}, [])`).includes('Tôi bán phần mềm cho ngân hàng.'));
+env.props.EMAIL_CONTEXT = 'x'.repeat(5000);
+assert.ok(run(`emailPrompt_({ subject: 's', digest: 'd' }, ${j(ME)}, [])`).length < 6000, 'bối cảnh bị cắt ngắn');
+delete env.props.EMAIL_CONTEXT;
 
 // Kết quả của AI bị ép về đúng phạm vi (th4 mang dữ liệu độc hại)
 const evil = run('emailRows_()').find(r => r.thread === 'th4');
@@ -197,6 +204,14 @@ const realRows = ctx.rows_; ctx.rows_ = () => { throw new Error('boom'); };
 telegramSent.length = 0; run('emailScanJob()');
 ctx.rows_ = realRows;
 assert.ok(telegramSent.length === 1 && telegramSent[0].includes('📧'), 'lỗi bất ngờ vẫn có tin báo: ' + telegramSent[0]);
+
+// --- 7d. Đặt lại kết quả phân tích: giữ lead đã nhập và luồng đã bỏ qua ---
+const beforeReset = run('emailRows_()');
+const keep = beforeReset.filter(r => r.status === 'đã nhập' || r.status === 'bỏ qua').length;
+run('emailResetAnalysis()');
+const afterReset = run('emailRows_()');
+assert.strictEqual(afterReset.length, keep, 'chỉ xoá đề xuất và không liên quan');
+assert.ok(afterReset.every(r => r.status === 'đã nhập' || r.status === 'bỏ qua'));
 
 // --- 8. Quyền: manifest chỉ xin gmail.readonly ---
 const manifest = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '../src/appsscript.json'), 'utf8'));
