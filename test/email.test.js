@@ -1,7 +1,7 @@
 // Chạy: node test/email.test.js — Gmail và Gemini đều là đồ giả, không có mạng thật.
 const assert = require('assert');
 const { load } = require('./harness');
-const env = load(['Config.gs', 'Utils.gs', 'Finance.gs', 'Habits.gs', 'Tasks.gs', 'Leads.gs', 'Email.gs', 'AI.gs', 'Telegram.gs', 'Router.gs', 'WebApi.gs']);
+const env = load(['Config.gs', 'Utils.gs', 'Finance.gs', 'Habits.gs', 'Tasks.gs', 'Leads.gs', 'Email.gs', 'AI.gs', 'Telegram.gs', 'Router.gs', 'WebApi.gs', 'Code.gs']);
 const run = env.run, ctx = env.ctx;
 const j = x => JSON.stringify(x), today = run('today_()'), day = n => run(`addDays_(today_(), ${n})`);
 const ago = d => Date.now() - d * 864e5;
@@ -229,6 +229,20 @@ run('emailResetAnalysis()');
 const afterReset = run('emailRows_()');
 assert.strictEqual(afterReset.length, keep, 'chỉ xoá đề xuất và không liên quan');
 assert.ok(afterReset.every(r => r.status === 'đã nhập' || r.status === 'bỏ qua'));
+
+// --- 7e. Lệnh bị lỗi thì báo về Telegram, không im lặng ---
+env.props.WEBHOOK_SECRET = 'sec'; env.props.TELEGRAM_TOKEN = 't'; delete env.props.EMAIL_LABEL;
+const realNewTrigger = ctx.ScriptApp.newTrigger;
+ctx.ScriptApp.newTrigger = () => { throw new Error('Authorization is required to perform that action.'); };
+telegramSent.length = 0;
+const upd = { update_id: 987654, message: { chat: { id: 1 }, text: '/email' } };
+run(`doPost(${j({ parameter: { secret: 'sec' }, postData: { contents: j(upd) } })})`);
+assert.ok(telegramSent.length === 1 && telegramSent[0].includes('⚠️') && telegramSent[0].includes('Authorization'), telegramSent.join('|'));
+// chat lạ thì không được báo gì
+telegramSent.length = 0;
+run(`doPost(${j({ parameter: { secret: 'sec' }, postData: { contents: j({ update_id: 987655, message: { chat: { id: 555 }, text: '/email' } }) } })})`);
+assert.strictEqual(telegramSent.length, 0, 'chỉ báo lỗi cho chat được phép');
+ctx.ScriptApp.newTrigger = realNewTrigger;
 
 // --- 8. Quyền: manifest chỉ xin gmail.readonly ---
 const manifest = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '../src/appsscript.json'), 'utf8'));
