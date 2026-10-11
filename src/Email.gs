@@ -4,7 +4,7 @@
  * An toàn:
  *  - Quyền chỉ đọc do OAuth quyết định: appsscript.json chỉ xin `gmail.readonly`. Dù code có lỗi hay bị lừa,
  *    token này không gửi, sửa hay xoá được email. Mọi lời gọi Gmail đi qua gmailGet_() và chỉ dùng GET.
- *  - Mặc định TẮT. Phải tự đặt Script Property EMAIL_ENABLED = 1.
+ *  - Mặc định TẮT. Phải tự đặt EMAIL_ENABLED = 1 và xác nhận hộp thư bằng EMAIL_ACCOUNT (chống đọc nhầm khi có nhiều tài khoản).
  *  - Nội dung email chỉ rời Apps Script để tới Gemini. Trước đó đã bỏ phần trích dẫn/chữ ký và che số thẻ, mật khẩu, OTP.
  *    Sheet chỉ lưu bản tóm tắt, không lưu nội dung email.
  *  - Email là dữ liệu không đáng tin (có thể chứa prompt injection). AI không có công cụ nào để hành động;
@@ -33,10 +33,20 @@ function gmailGet_(path, params) {
   return JSON.parse(res.getContentText());
 }
 
-function myEmail_() {
-  let me = prop_('EMAIL_ME');
-  if (!me) { me = String(gmailGet_('profile').emailAddress || '').toLowerCase(); setProp_('EMAIL_ME', me); }
-  return me;
+/** Hộp thư mà token hiện tại đang đọc (do tài khoản chạy script quyết định, không phải tài khoản đang mở trình duyệt). */
+function gmailAccount_() { return String(gmailGet_('profile').emailAddress || '').toLowerCase(); }
+
+/**
+ * Chặn đọc nhầm hộp thư khi máy có nhiều tài khoản Google: bắt buộc khai báo EMAIL_ACCOUNT và phải khớp
+ * tài khoản đang chạy script. Cho tới lúc khớp, không có luồng email nào được tải.
+ */
+function checkEmailAccount_() {
+  const actual = gmailAccount_();
+  const expected = (prop_('EMAIL_ACCOUNT') || '').trim().toLowerCase();
+  if (!expected) return { error: `Script đang đọc hộp thư ${actual}. Nếu đúng, đặt Script Property EMAIL_ACCOUNT = ${actual} để xác nhận. Nếu đây không phải hộp thư bạn muốn, xem README mục “Nhiều tài khoản Google”.` };
+  if (actual !== expected) return { error: `Script đang chạy bằng ${actual} nhưng EMAIL_ACCOUNT = ${expected}. Đã dừng để không đọc nhầm hộp thư. Xem README mục “Nhiều tài khoản Google”.` };
+  const aliases = (prop_('EMAIL_ALIASES') || '').toLowerCase().split(/[,\s]+/).filter(x => /@/.test(x));
+  return { account: actual, mine: [actual].concat(aliases) };
 }
 
 function listEmailThreads_(days, max) {
@@ -108,13 +118,14 @@ function cleanBody_(text, cap) {
 }
 
 /** Gom 1 luồng email thành bản tóm lược nhỏ để đưa cho AI. Trả về {skip, reason} nếu không cần phân tích. */
-function buildThread_(thread, me) {
+function buildThread_(thread, meOrList) {
+  const mineAddrs = [].concat(meOrList).map(x => String(x).toLowerCase()), me = mineAddrs[0];
   const msgCap = emailNum_('EMAIL_MSG_CHARS', EMAIL_DEFAULTS.MSG_CHARS);
   const msgs = (thread.messages || []).filter(m => (m.labelIds || []).indexOf('DRAFT') < 0);
   if (!msgs.length) return { skip: true, reason: 'trống', threadId: thread.id, historyId: String(thread.historyId || ''), subject: '', lastDate: '' };
   const parsed = msgs.map(m => {
     const fromAddr = mailAddr_(mailHeader_(m, 'From')), ts = Number(m.internalDate) || 0;
-    return { mine: fromAddr === me, fromAddr, to: mailAddrs_(mailHeader_(m, 'To')), ts,
+    return { mine: mineAddrs.indexOf(fromAddr) >= 0, fromAddr, to: mailAddrs_(mailHeader_(m, 'To')), ts,
       date: ts ? Utilities.formatDate(new Date(ts), TZ, 'yyyy-MM-dd HH:mm') : '', text: cleanBody_(messageText_(m), msgCap) };
   });
   const last = parsed[parsed.length - 1];
@@ -122,7 +133,7 @@ function buildThread_(thread, me) {
     lastDate: last.date.slice(0, 10), lastTs: last.ts, lastFromMe: last.mine };
 
   const externals = [];
-  parsed.forEach(m => (m.mine ? m.to : [m.fromAddr]).forEach(a => { if (a !== me && externals.indexOf(a) < 0) externals.push(a); }));
+  parsed.forEach(m => (m.mine ? m.to : [m.fromAddr]).forEach(a => { if (mineAddrs.indexOf(a) < 0 && externals.indexOf(a) < 0) externals.push(a); }));
   const skipDomains = (prop_('EMAIL_SKIP_DOMAINS') || '').toLowerCase().split(/[,\s]+/).filter(Boolean);
   const inbound = parsed.filter(m => !m.mine);
   if (!externals.length) return Object.assign(base, { skip: true, reason: 'không có đối tác bên ngoài' });
@@ -257,7 +268,9 @@ function emailScan_(opts) {
   if (!lock.tryLock(3000)) return { error: 'Đang có một lượt quét khác chạy, thử lại sau vài phút.' };
   const started = Date.now(), res = { threads: 0, analyzed: 0, skipped: 0, pending: 0, suggested: 0, errors: [] };
   try {
-    const me = myEmail_();
+    const chk = checkEmailAccount_();
+    if (chk.error) return { error: chk.error };
+    const me = chk.mine;
     const list = listEmailThreads_(emailNum_('EMAIL_DAYS', EMAIL_DEFAULTS.DAYS), emailNum_('EMAIL_MAX_THREADS', EMAIL_DEFAULTS.MAX_THREADS));
     res.threads = list.length;
     const known = {}; emailRows_().forEach(r => { known[r.thread] = r; });
@@ -273,7 +286,7 @@ function emailScan_(opts) {
       const t = buildThread_(thread, me);
       if (t.skip) { saveSkippedThread_(known[item.id], t); res.skipped++; handled++; continue; }
       if (res.analyzed > 0) Utilities.sleep(emailNum_('EMAIL_SLEEP_MS', EMAIL_DEFAULTS.SLEEP_MS));
-      const raw = gemini_([{ text: emailPrompt_(t, me, names) }], true, geminiOpts);
+      const raw = gemini_([{ text: emailPrompt_(t, me[0], names) }], true, geminiOpts);
       if (!raw) { fails++; res.errors.push('Gemini: ' + GEMINI_STATE.lastError); continue; }
       const ins = sanitizeInsight_(raw, t, leads);
       if (saveEmailInsight_(known[item.id], t, ins) === EMAIL_STATUS.SUGGESTED) res.suggested++;
@@ -319,11 +332,14 @@ function dailyEmailScan() {
   if (emailEnabled_()) emailScan_();
 }
 
-/** Chạy tay 1 lần: hiện hộp xin quyền Gmail chỉ-đọc và kiểm tra kết nối. */
+/** Chạy tay 1 lần: hiện hộp xin quyền Gmail chỉ-đọc, cho biết script đang đọc hộp thư NÀO, và kiểm tra khớp EMAIL_ACCOUNT. */
 function authorizeEmail() {
-  const me = gmailGet_('profile');
-  console.log('Đã kết nối Gmail (chỉ đọc): ' + me.emailAddress + ', tổng ' + me.messagesTotal + ' email.');
-  console.log('Bước tiếp: đặt Script Property EMAIL_ENABLED = 1 rồi chạy emailScanJob hoặc nhắn /email cho bot.');
+  const me = gmailGet_('profile'), actual = String(me.emailAddress || '').toLowerCase();
+  const expected = (prop_('EMAIL_ACCOUNT') || '').trim().toLowerCase();
+  console.log(`Script đang đọc Gmail (chỉ đọc) của: ${actual} (${me.messagesTotal} email).`);
+  if (!expected) console.log(`➜ Nếu đây là hộp thư bạn muốn: đặt Script Property EMAIL_ACCOUNT = ${actual}. Nếu không: xem README mục “Nhiều tài khoản Google”.`);
+  else if (expected === actual) console.log('✅ Khớp EMAIL_ACCOUNT. Bước tiếp: đặt EMAIL_ENABLED = 1 rồi nhắn /email.');
+  else console.log(`❌ EMAIL_ACCOUNT = ${expected} nhưng script đang chạy bằng ${actual}. Quét sẽ bị chặn cho tới khi khớp.`);
 }
 
 // ---------- Báo cáo & xử lý đề xuất ----------

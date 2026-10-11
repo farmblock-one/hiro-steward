@@ -10,6 +10,7 @@ const msg = (id, from, to, subject, ts, text, extra) => Object.assign({ id, inte
   headers: [{ name: 'From', value: from }, { name: 'To', value: to }, { name: 'Subject', value: subject }], body: { data: b64(text) } } }, extra);
 
 const ME = 'me@mycompany.vn';
+const ALIAS = 'sales@mycompany.vn';
 const CARD = '4111 1111 1111 1111';
 const threads = {
   th1: { id: 'th1', historyId: '100', messages: [msg('m1', 'Lan Nguyen <lan@abccorp.vn>', ME, 'Xin báo giá gói B', ago(2),
@@ -61,7 +62,19 @@ assert.ok(run('emailScan_()').error.includes('EMAIL_ENABLED'));
 assert.strictEqual(ctx.__calls.length, 0, 'chưa bật thì không được gọi Gmail/Gemini');
 assert.strictEqual(api('dashboard').result.email.enabled, false);
 assert.strictEqual(run('emailAttentionText_()'), '');
-env.props.EMAIL_ENABLED = '1'; env.props.GEMINI_API_KEY = 'free-key'; env.props.GEMINI_EMAIL_KEY = 'paid-key';
+// Có nhiều tài khoản: chưa xác nhận EMAIL_ACCOUNT thì không tải luồng email nào
+env.props.EMAIL_ENABLED = '1';
+const gate = run('emailScan_()');
+assert.ok(gate.error.includes(ME) && gate.error.includes('EMAIL_ACCOUNT'), gate.error);
+assert.ok(ctx.__calls.every(c => c.url.endsWith('/profile')), 'chỉ gọi hồ sơ để biết tên tài khoản, chưa đọc thư nào');
+env.props.EMAIL_ACCOUNT = 'someone.else@gmail.com';
+const wrong = run('emailScan_()');
+assert.ok(wrong.error.includes('đọc nhầm') && wrong.error.includes('someone.else@gmail.com'), wrong.error);
+assert.ok(ctx.__calls.every(c => c.url.endsWith('/profile')), 'sai tài khoản thì không tải thư nào');
+assert.ok(cmd('/emails').includes('📧'));
+assert.strictEqual(rows().length, 0);
+env.props.EMAIL_ACCOUNT = ME.toUpperCase(); ctx.__calls.length = 0;   // không phân biệt hoa thường
+env.props.GEMINI_API_KEY = 'free-key'; env.props.GEMINI_EMAIL_KEY = 'paid-key';
 
 // --- 2. Làm sạch nội dung ---
 const cleaned = run(`cleanBody_(${j(`Xin chào\nSố ${CARD}\nMật khẩu: hunter2\nOTP 123456\n> quote\nSau`)}, 1000)`);
@@ -161,9 +174,17 @@ assert.ok(!prompts.some(x => x.p.includes('Hỏi giá') || x.p.includes('Hỏi d
 env.props.EMAIL_LABEL = 'Khách "VIP"'; ctx.__calls.length = 0; run('emailScan_()');
 const listCall = ctx.__calls.find(c => c.url.includes('/threads?')); assert.ok(decodeURIComponent(listCall.url).includes('label:"Khách VIP"'));
 
+// --- 7b. Địa chỉ phụ (alias): thư gửi từ alias vẫn là thư của tôi ---
+const aliasThread = { id: 'thA', historyId: '900', messages: [msg('mA', ALIAS, 'a@client.com', 'Báo giá', ago(1), 'Gửi anh báo giá'), msg('mB', 'A <a@client.com>', ALIAS, 'Re: Báo giá', ago(0), 'ok em')] };
+const parsedNoAlias = run(`buildThread_(${j(aliasThread)}, ${j(ME)})`), parsedAlias = run(`buildThread_(${j(aliasThread)}, ${j([ME, ALIAS])})`);
+assert.ok(parsedNoAlias.externals.includes(ALIAS), 'không khai báo alias thì bị coi là đối tác');
+assert.ok(!parsedAlias.externals.includes(ALIAS) && parsedAlias.externals.includes('a@client.com'), 'khai báo alias thì được tính là của tôi');
+env.props.EMAIL_ALIASES = ALIAS; assert.strictEqual(j(run('checkEmailAccount_()').mine), j([ME, ALIAS]));
+
 // --- 8. Quyền: manifest chỉ xin gmail.readonly ---
 const manifest = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '../src/appsscript.json'), 'utf8'));
 assert.ok(manifest.oauthScopes.includes('https://www.googleapis.com/auth/gmail.readonly'));
+assert.ok(manifest.dependencies.enabledAdvancedServices.some(x => x.serviceId === 'gmail'), 'khai báo Gmail service để Google bật API cho project');
 assert.ok(!manifest.oauthScopes.some(s => /gmail\.(send|modify|compose|insert|labels|settings)|mail\.google\.com/.test(s)), 'không có quyền ghi Gmail');
 const src = require('fs').readFileSync(require('path').join(__dirname, '../src/Email.gs'), 'utf8');
 assert.ok(!/GmailApp|method:\s*'(post|put|patch|delete)'/i.test(src), 'Email.gs không dùng GmailApp hay phương thức ghi');

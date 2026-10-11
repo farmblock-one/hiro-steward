@@ -114,12 +114,27 @@ AI quét email 14 ngày gần nhất và cho bạn biết: **đang có lead nào
 
 ### Cách bật
 1. Apps Script → ⚙️ Cài đặt dự án → bật “Hiển thị tệp kê khai appsscript.json” → thay nội dung bằng `src/appsscript.json` mới. Thay `Mã.gs` bằng `dist/Code.gs` mới (và `Index.html` nếu bạn dùng link `script.google.com`).
-2. Chọn hàm **`authorizeEmail`** → Chạy. Màn hình xin quyền sẽ có cảnh báo “Google chưa xác minh ứng dụng” (bình thường với script của chính bạn; `gmail.readonly` là quyền “hạn chế”). Kiểm tra danh sách quyền chỉ có xem email, rồi bấm Nâng cao → Tiếp tục. Nhật ký phải in ra email của bạn.
-3. Script Properties: `EMAIL_ENABLED` = `1`, và (khuyến nghị) `GEMINI_EMAIL_KEY`.
-4. Chạy `installTriggers` lại 1 lần (thêm lượt quét 7h sáng), rồi **Triển khai → Phiên bản mới**.
-5. Nhắn bot `/email`, đợi 1–3 phút, rồi `/emails`.
+2. Cột trái, mục **Dịch vụ (Services)** → bấm **+** → chọn **Gmail API** → Thêm. Bước này làm Google bật Gmail API cho project (nếu bỏ qua sẽ gặp lỗi 403 “Gmail API has not been used in project … or it is disabled”). Nếu manifest đã có sẵn dịch vụ này thì bạn sẽ thấy “Gmail” trong danh sách, không cần thêm lần nữa.
+3. Chọn hàm **`authorizeEmail`** → Chạy. Màn hình xin quyền có cảnh báo “Google chưa xác minh ứng dụng” (bình thường với script của chính bạn; `gmail.readonly` là quyền “hạn chế”). Kiểm tra danh sách quyền chỉ có xem email, rồi bấm Nâng cao → Tiếp tục. Nhật ký sẽ in ra **hộp thư script đang đọc**.
+4. Script Properties: `EMAIL_ACCOUNT` = địa chỉ vừa in ra (xác nhận đúng hộp thư), `EMAIL_ENABLED` = `1`, và (khuyến nghị) `GEMINI_EMAIL_KEY`.
+5. Chạy `installTriggers` lại 1 lần (thêm lượt quét 7h sáng), rồi **Triển khai → Phiên bản mới**.
+6. Nhắn bot `/email`, đợi 1–3 phút, rồi `/emails`.
 
-Tuỳ chọn (Script Properties): `EMAIL_DAYS` (mặc định 14), `EMAIL_MAX_THREADS` (40), `EMAIL_PER_RUN` (12 luồng/lượt, để không vượt hạn mức Gemini), `EMAIL_LABEL` (chỉ quét một nhãn Gmail, vd. `Khách hàng`), `EMAIL_SKIP_DOMAINS` (vd. `congtyban.com, vendor.com`), `EMAIL_INCLUDE_INTERNAL=1` (quét cả email nội bộ), `GEMINI_EMAIL_MODEL`.
+Tuỳ chọn (Script Properties): `EMAIL_DAYS` (mặc định 14), `EMAIL_MAX_THREADS` (40), `EMAIL_PER_RUN` (12 luồng/lượt, để không vượt hạn mức Gemini), `EMAIL_LABEL` (chỉ quét một nhãn Gmail, vd. `Khách hàng`), `EMAIL_SKIP_DOMAINS` (vd. `congtyban.com, vendor.com`), `EMAIL_ALIASES` (các địa chỉ gửi đi khác của bạn, để thư gửi từ alias không bị coi là thư của đối tác), `EMAIL_INCLUDE_INTERNAL=1` (quét cả email nội bộ), `GEMINI_EMAIL_MODEL`.
+
+### Nhiều tài khoản Google: script sẽ đọc hộp thư nào?
+Script đọc hộp thư của **tài khoản Google đã triển khai web app và tạo trigger**, không phải tài khoản bạn đang mở trong tab trình duyệt. Dấu hiệu: ảnh đại diện góc phải trên của trình soạn thảo Apps Script là tài khoản chủ project.
+- Hàm `authorizeEmail` in ra hộp thư script đang đọc. Quét **chỉ chạy khi `EMAIL_ACCOUNT` khớp**; lệch thì dừng, chưa tải thư nào (tránh đọc nhầm hộp thư cá nhân thay vì hộp thư công việc).
+- Muốn đọc hộp thư công việc `abc@congty.com`: tạo và triển khai project Apps Script **bằng chính tài khoản đó** (mở Apps Script trong cửa sổ đã đăng nhập tài khoản đó, hoặc dùng `script.google.com/u/1/...` theo thứ tự tài khoản). Khi đó Sheet dữ liệu lead cũng nằm trong Drive của tài khoản đó, nên hãy chắc chắn chính sách công ty cho phép.
+- Script không thể đọc một hộp thư thứ hai bằng quyền của tài khoản khác. Muốn gom nhiều hộp thư thì phải triển khai riêng cho từng tài khoản.
+- Chỉ đọc được hộp thư Gmail / Google Workspace; Outlook, email công ty không dùng Google thì không đọc được.
+
+### Gặp lỗi?
+| Lỗi | Cách xử lý |
+|---|---|
+| `Gmail API 403 ... has not been used in project ... or it is disabled` | Làm bước 2 ở trên (thêm dịch vụ Gmail API). Project mặc định của Apps Script tự bật API khi thêm dịch vụ. Nếu bạn đã gắn project Google Cloud riêng thì vào Cloud Console của project đó bật “Gmail API”. |
+| `Script đang chạy bằng X nhưng EMAIL_ACCOUNT = Y` | Triển khai và cấp quyền bằng đúng tài khoản Y, hoặc sửa `EMAIL_ACCOUNT` nếu X mới là hộp thư bạn muốn. |
+| Quyền hết hạn sau ~7 ngày | Có thể xảy ra nếu project dùng Google Cloud riêng ở trạng thái “Testing”. Chạy lại `authorizeEmail`, hoặc chuyển màn hình đồng ý OAuth sang “In production”. |
 
 ### Lệnh
 `/email` quét ngay · `/emails` xem gợi ý · `/addmail 12` thêm vào lead (hoặc cập nhật lead đã có) · `/skipmail 12` bỏ qua. Luồng đã “bỏ qua” chỉ hiện lại nếu khách nhắn thêm và đang chờ bạn.

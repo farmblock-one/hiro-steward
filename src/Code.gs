@@ -106,8 +106,8 @@ function eveningReminder() {
 /** Kiểm tra cấu hình khi bot không trả lời. Chạy tay rồi xem Nhật ký thực thi. */
 function diagnose() {
   const p = PropertiesService.getScriptProperties().getProperties();
-  ['TELEGRAM_TOKEN', 'ALLOWED_CHAT_ID', 'WEB_APP_URL', 'WEBHOOK_SECRET', 'WEB_KEY', 'SHEET_ID', 'GEMINI_API_KEY', 'GEMINI_EMAIL_KEY', 'EMAIL_ENABLED'].forEach(k => {
-    const shown = k === 'ALLOWED_CHAT_ID' || k === 'WEB_APP_URL' || k === 'EMAIL_ENABLED' ? JSON.stringify(p[k]) : 'đã đặt';
+  ['TELEGRAM_TOKEN', 'ALLOWED_CHAT_ID', 'WEB_APP_URL', 'WEBHOOK_SECRET', 'WEB_KEY', 'SHEET_ID', 'GEMINI_API_KEY', 'GEMINI_EMAIL_KEY', 'EMAIL_ENABLED', 'EMAIL_ACCOUNT'].forEach(k => {
+    const shown = k === 'ALLOWED_CHAT_ID' || k === 'WEB_APP_URL' || k === 'EMAIL_ENABLED' || k === 'EMAIL_ACCOUNT' ? JSON.stringify(p[k]) : 'đã đặt';
     console.log(`${k}: ${p[k] ? shown : '❌ CHƯA ĐẶT'}`);
   });
   if (!p.TELEGRAM_TOKEN) return;
