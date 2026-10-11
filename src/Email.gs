@@ -49,19 +49,40 @@ function checkEmailAccount_() {
   return { account: actual, mine: [actual].concat(aliases) };
 }
 
+/** Tên nhãn (không phân biệt hoa thường) -> id nhãn Gmail. Không thấy thì báo lỗi kèm danh sách nhãn của bạn. */
+function resolveEmailLabel_(name) {
+  const want = String(name || '').trim().toLowerCase();
+  const all = gmailGet_('labels').labels || [];
+  const hit = all.find(l => String(l.name).toLowerCase() === want || String(l.id).toLowerCase() === want);
+  if (hit) return hit.id;
+  const mine = all.filter(l => l.type === 'user').map(l => l.name).sort();
+  throw new Error(`Không thấy nhãn Gmail “${String(name).trim()}”. Nhãn của bạn: ${mine.slice(0, 25).join(' | ') || '(chưa có nhãn nào)'}. Đặt EMAIL_LABEL đúng tên nhãn, nhãn con ghi dạng “Cha/Con”.`);
+}
+
+/**
+ * Liệt kê luồng email cần xét. Có EMAIL_LABEL thì chỉ lấy luồng mang đúng nhãn đó (tra theo id, nên tên có dấu chấm,
+ * khoảng trắng hay tiếng Việt đều chính xác) và KHÔNG loại theo thư mục Quảng cáo/Cập nhật, vì bạn đã chủ động gắn nhãn.
+ */
 function listEmailThreads_(days, max) {
-  const q = [`newer_than:${days}d`, '-in:spam', '-in:trash', '-category:promotions', '-category:social', '-category:updates', '-category:forums'];
-  const label = (prop_('EMAIL_LABEL') || '').replace(/"/g, '').trim();
-  if (label) q.push(`label:"${label}"`);
+  const q = [`newer_than:${days}d`, '-in:spam', '-in:trash'];
+  const label = (prop_('EMAIL_LABEL') || '').trim();
+  const labelId = label ? resolveEmailLabel_(label) : '';
+  if (!label) q.push('-category:promotions', '-category:social', '-category:updates', '-category:forums');
   const extra = (prop_('EMAIL_QUERY_EXTRA') || '').trim();
   if (extra) q.push(extra);
   const out = []; let token = '';
   do {
-    const r = gmailGet_('threads', { q: q.join(' '), maxResults: Math.min(100, max - out.length), pageToken: token });
+    const r = gmailGet_('threads', { q: q.join(' '), labelIds: labelId, maxResults: Math.min(100, max - out.length), pageToken: token });
     (r.threads || []).forEach(t => out.push({ id: t.id, historyId: String(t.historyId || '') }));
     token = r.nextPageToken || '';
   } while (token && out.length < max);
   return out.slice(0, max);
+}
+
+/** Chạy tay: in tên các nhãn Gmail của bạn để chép đúng vào EMAIL_LABEL. Chỉ đọc danh sách nhãn, không đọc email. */
+function emailListLabels() {
+  const mine = (gmailGet_('labels').labels || []).filter(l => l.type === 'user').map(l => l.name).sort();
+  console.log(mine.length ? 'Nhãn của bạn (chép đúng vào EMAIL_LABEL):\n• ' + mine.join('\n• ') : 'Bạn chưa có nhãn nào.');
 }
 
 // ---------- Đọc & làm sạch nội dung ----------

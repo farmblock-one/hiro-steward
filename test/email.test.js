@@ -32,6 +32,7 @@ env.setFetch((url, o) => {
     assert.strictEqual(o.headers.Authorization, 'Bearer test-token');
     const path = url.replace('https://gmail.googleapis.com/gmail/v1/users/me/', '');
     if (path === 'profile') return { body: { emailAddress: ME, messagesTotal: 100 } };
+    if (path === 'labels') return { body: { labels: [{ id: 'INBOX', name: 'INBOX', type: 'system' }, { id: 'Label_7', name: '2. Lead', type: 'user' }, { id: 'Label_8', name: 'Khách/VIP', type: 'user' }] } };
     if (path.startsWith('threads?')) return { body: { threads: mailbox.map(id => ({ id, historyId: threads[id].historyId })) } };
     const m = path.match(/^threads\/(\w+)\?format=full$/); if (m) return { body: threads[m[1]] };
     throw new Error('đường dẫn Gmail lạ: ' + path);
@@ -180,8 +181,24 @@ env.props.EMAIL_SKIP_DOMAINS = 'c.com, d.com'; prompts.length = 0;
 geminiReply = () => Object.assign({}, base, { relevant: false });
 run('emailScan_()');
 assert.ok(!prompts.some(x => x.p.includes('Hỏi giá') || x.p.includes('Hỏi demo')), 'tên miền bị loại không được gửi đi');
-env.props.EMAIL_LABEL = 'Khách "VIP"'; ctx.__calls.length = 0; run('emailScan_()');
-const listCall = ctx.__calls.find(c => c.url.includes('/threads?')); assert.ok(decodeURIComponent(listCall.url).includes('label:"Khách VIP"'));
+// Mặc định (chưa đặt nhãn) loại thư mục Quảng cáo, Mạng xã hội...
+ctx.__calls.length = 0; run('emailScan_()');
+let lq = decodeURIComponent(ctx.__calls.find(c => c.url.includes('/threads?')).url);
+assert.ok(lq.includes('-category:promotions') && !lq.includes('labelIds='), lq);
+// Đặt nhãn: tra theo tên (không phân biệt hoa thường), lọc theo id nhãn, không loại thư mục nữa
+env.props.EMAIL_LABEL = ' 2. lead '; ctx.__calls.length = 0; run('emailScan_()');
+lq = decodeURIComponent(ctx.__calls.find(c => c.url.includes('/threads?')).url);
+assert.ok(lq.includes('labelIds=Label_7') && !lq.includes('category:') && !lq.includes('label:'), lq);
+assert.ok(ctx.__calls.some(c => c.url.endsWith('/labels')) && ctx.__calls.every(c => c.method === 'get'));
+env.props.EMAIL_LABEL = 'khách/vip'; ctx.__calls.length = 0; run('emailScan_()');
+assert.ok(decodeURIComponent(ctx.__calls.find(c => c.url.includes('/threads?')).url).includes('labelIds=Label_8'), 'nhãn con Cha/Con');
+// Nhãn sai: báo lỗi kèm danh sách nhãn thật và không tải luồng nào
+env.props.EMAIL_LABEL = '2.Lead'; ctx.__calls.length = 0;
+const badLabel = run('emailScan_()');
+assert.ok(badLabel.errors.join(' ').includes('Không thấy nhãn') && badLabel.errors.join(' ').includes('2. Lead') && badLabel.errors.join(' ').includes('Khách/VIP'), j(badLabel));
+assert.ok(!ctx.__calls.some(c => c.url.includes('/threads')), 'nhãn sai thì không đọc luồng nào');
+run('emailListLabels()');
+delete env.props.EMAIL_LABEL;
 
 // --- 7b. Địa chỉ phụ (alias): thư gửi từ alias vẫn là thư của tôi ---
 const aliasThread = { id: 'thA', historyId: '900', messages: [msg('mA', ALIAS, 'a@client.com', 'Báo giá', ago(1), 'Gửi anh báo giá'), msg('mB', 'A <a@client.com>', ALIAS, 'Re: Báo giá', ago(0), 'ok em')] };
