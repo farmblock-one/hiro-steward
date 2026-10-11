@@ -205,6 +205,13 @@ assert.ok(!ctx.__calls.some(c => c.url.includes('/threads')), 'nhãn sai thì kh
 run('emailListLabels()');
 delete env.props.EMAIL_LABEL;
 
+// --- 7a. Chất lượng gợi ý: nội bộ, tên miền không phải công ty, văn phong ---
+assert.ok(p1.includes('NỘI BỘ') && p1.includes('không viết "người dùng"') && p1.includes('KHÔNG viết "Chờ ...".'), 'prompt có quy tắc nội bộ, văn phong, hành động follow-up');
+const dom = run(`sanitizeInsight_(${j({ relevant: true, company: 'getnsc.com', contact: 'Harry' })}, { lastDate: '${today}', lastFromMe: false }, [])`);
+assert.strictEqual(dom.company, '', 'tên miền không được dùng làm tên công ty');
+assert.strictEqual(run(`sanitizeInsight_(${j({ relevant: true, company: 'Sloop Pty Ltd' })}, { lastDate: '${today}', lastFromMe: false }, [])`).company, 'Sloop Pty Ltd');
+assert.strictEqual(run(`emailTitle_(${j({ company: '', contact: 'Harry', subject: 'x' })})`), 'Harry');
+
 // --- 7b. Địa chỉ phụ (alias): thư gửi từ alias vẫn là thư của tôi ---
 const aliasThread = { id: 'thA', historyId: '900', messages: [msg('mA', ALIAS, 'a@client.com', 'Báo giá', ago(1), 'Gửi anh báo giá'), msg('mB', 'A <a@client.com>', ALIAS, 'Re: Báo giá', ago(0), 'ok em')] };
 const parsedNoAlias = run(`buildThread_(${j(aliasThread)}, ${j(ME)})`), parsedAlias = run(`buildThread_(${j(aliasThread)}, ${j([ME, ALIAS])})`);
