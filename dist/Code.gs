@@ -1968,6 +1968,14 @@ function diagnose() {
   }
 }
 
+/** Chạy thử các lệnh email ngay trong trình soạn thảo. Nếu lệnh lỗi, nhật ký in ra chính xác dòng lỗi (bot thì chỉ im lặng). */
+function testCommands() {
+  ['/emails', '/email'].forEach(c => {
+    try { console.log(c + ' → ' + String(handleCommand_(c)).slice(0, 600)); }
+    catch (e) { console.log(c + ' ❌ LỖI: ' + (e && e.stack || e)); }
+  });
+}
+
 /** Giả lập Telegram gọi webhook để biết lỗi nằm ở code hay ở cấu hình deploy. */
 function testWebhook() {
   const chatId = Number((prop_('ALLOWED_CHAT_ID') || '').trim());
