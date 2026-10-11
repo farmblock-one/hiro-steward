@@ -31,7 +31,19 @@ const SHEETS = {
     name: 'LeadLog',
     headers: ['Ngày', 'ID lead', 'Tên lead', 'Ghi chú', 'Thời gian'],
   },
+  // Kết quả AI phân tích email. Chỉ lưu bản tóm tắt, không lưu nội dung email.
+  EMAIL: {
+    name: 'EmailLeads',
+    headers: ['ID', 'Thread', 'Chủ đề', 'Lead/Công ty', 'Liên hệ', 'Email liên hệ', 'Tóm tắt', 'Giai đoạn', 'Giá trị',
+      'Next action', 'Hạn follow-up', 'Lý do hạn', 'Chờ ai', 'Ưu tiên', 'Độ tin cậy', 'Email cuối', 'Link Gmail',
+      'Trạng thái', 'Lead ID', 'Phân tích lúc', 'HistoryId', 'Lead khớp'],
+    textCols: [2, 21], // Thread, HistoryId: để dạng văn bản, vì Sheets hay đổi chuỗi như “12e345” thành số
+  },
 };
+
+const EC = { ID: 0, THREAD: 1, SUBJECT: 2, COMPANY: 3, CONTACT: 4, CEMAIL: 5, SUMMARY: 6, STAGE: 7, VALUE: 8, NEXT: 9,
+  DUE: 10, REASON: 11, WAIT: 12, PRIO: 13, CONF: 14, LAST: 15, LINK: 16, STATUS: 17, LEADID: 18, ANALYZED: 19, HIST: 20, MATCH: 21 };
+const EMAIL_STATUS = { SUGGESTED: 'đề xuất', IMPORTED: 'đã nhập', DISMISSED: 'bỏ qua', IRRELEVANT: 'không liên quan' };
 
 // Phễu bán hàng. Sheet lưu `label`; `alias` là các cách gõ tắt (đã bỏ dấu, chữ thường).
 const LEAD_STAGES = [

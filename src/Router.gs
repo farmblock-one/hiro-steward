@@ -69,6 +69,9 @@ const HELP_TEXT = [
   '   /next 3 họp demo 25/10 · /snooze 3 2 · /stage 3 báo giá · /won 3 · /lost 3 giá cao',
   '   /leads (danh sách) · /pipeline (phễu) · 8h sáng bot tự nhắc',
   '',
+  '📧 Email (chỉ đọc, cần bật theo README):',
+  '   /email quét ngay · /emails xem gợi ý · /addmail 12 thêm vào lead · /skipmail 12 bỏ qua',
+  '',
   '🎙 Gửi voice cũng được (cần GEMINI_API_KEY).',
   '📱 /app — mở web app',
 ].join('\n');
@@ -110,6 +113,10 @@ function handleCommand_(text) {
       const m = arg.match(/^(.*?)(?:\s+(\d{1,2}))?$/);
       return snoozeLead_(m[1], m[2] || 1);
     }
+    case 'email': return emailScanNow_();
+    case 'emails': return emailReport_();
+    case 'addmail': return acceptEmailInsight_(arg);
+    case 'skipmail': return dismissEmailInsight_(arg);
     case 'morning': return morningBrief_();
     case 'today': return dailyDigest_();
     case 'app': return webAppLink_() || 'Chưa đặt WEB_APP_URL / WEB_KEY trong Script Properties.';
@@ -129,9 +136,10 @@ function dailyDigest_() {
     `📅 ${prettyDate_(t)}`,
     `💰 Hôm nay đã chi ${money_(s.today)} · tháng này ${money_(s.month)}`,
     leadsTxt ? leadsTxt : '🐟 Lead: không có gì cần xử lý gấp.',
+    emailAttentionText_(),
     pending.length ? `🐾 Chưa làm: ${pending.join(', ')}` : '🐾 Đã hoàn thành mọi thói quen hôm nay 💪',
     urgent.length ? `🎯 Đến hạn/quá hạn:\n${urgent.map(taskLine_).join('\n')}` : '🎯 Không có việc đến hạn.',
-  ].join('\n\n');
+  ].filter(Boolean).join('\n\n');
 }
 
 /** Tin nhắc buổi sáng (8h): ưu tiên lead cần liên hệ. */
@@ -143,6 +151,8 @@ function morningBrief_() {
   const tasks = sortTasks_(tasks_(false).filter(x => x.due && x.due <= t));
   const parts = [`🐱☀️ Meo! Chào buổi sáng ${prettyDate_(t)}`];
   parts.push(leadsTxt || '🐟 Không có lead nào cần xử lý gấp hôm nay.');
+  const mailTxt = emailAttentionText_();
+  if (mailTxt) parts.push(mailTxt);
   if (tasks.length) parts.push(`🎯 Việc đến hạn:\n${tasks.map(taskLine_).join('\n')}`);
   parts.push(`💰 Hôm qua đã chi ${money_(yesterday)}`);
   parts.push('Ghi nhanh sau mỗi cuộc gọi: /log <id> <ghi chú> | <việc tiếp theo>');

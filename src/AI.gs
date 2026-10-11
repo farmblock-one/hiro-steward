@@ -8,10 +8,15 @@ function aiEnabled_() {
   return !!prop_('GEMINI_API_KEY');
 }
 
-function gemini_(parts, asJson) {
-  const key = prop_('GEMINI_API_KEY');
-  if (!key) return null;
-  const model = prop_('GEMINI_MODEL') || 'gemini-2.5-flash';
+const GEMINI_STATE = { lastError: '' };
+
+/** opts.key / opts.model: dùng key riêng cho email (xem README mục Email về quyền riêng tư). */
+function gemini_(parts, asJson, opts) {
+  opts = opts || {};
+  const key = opts.key || prop_('GEMINI_API_KEY');
+  GEMINI_STATE.lastError = '';
+  if (!key) { GEMINI_STATE.lastError = 'chưa có API key'; return null; }
+  const model = opts.model || prop_('GEMINI_MODEL') || 'gemini-2.5-flash';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
   const body = {
     contents: [{ role: 'user', parts }],
@@ -22,7 +27,8 @@ function gemini_(parts, asJson) {
     headers: { 'x-goog-api-key': key }, muteHttpExceptions: true,
   });
   if (res.getResponseCode() !== 200) {
-    console.error('Gemini error', res.getResponseCode(), res.getContentText());
+    console.error('Gemini error', res.getResponseCode(), res.getContentText().slice(0, 300));
+    GEMINI_STATE.lastError = 'HTTP ' + res.getResponseCode();
     return null;
   }
   const data = JSON.parse(res.getContentText());
