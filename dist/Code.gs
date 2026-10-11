@@ -1843,11 +1843,24 @@ function doPost(e) {
     const key = 'upd_' + update.update_id;
     if (cache.get(key)) return ok_();
     cache.put(key, '1', 21600);
-    handleUpdate_(update);
+    try { handleUpdate_(update); }
+    catch (err) { console.error(err && err.stack || err); notifyHandlerError_(update, err); }
   } catch (err) {
     console.error(err && err.stack || err);
   }
   return ok_();
+}
+
+/** Lệnh bị lỗi thì báo thẳng cho bạn trong Telegram, không để bot im lặng. Chỉ báo cho đúng chat được phép. */
+function notifyHandlerError_(update, err) {
+  try {
+    const msg = update && (update.message || update.edited_message);
+    const chatId = msg && msg.chat ? String(msg.chat.id) : '';
+    if (chatId && chatId === (prop_('ALLOWED_CHAT_ID') || '').trim()) {
+      send_(chatId, '⚠️ Bot gặp lỗi khi xử lý lệnh này: ' + String(err && err.message || err).slice(0, 250) +
+        '\nNếu lỗi nhắc tới quyền (authorization/permission), chạy một hàm bất kỳ trong trình soạn thảo để cấp quyền, rồi Triển khai → Phiên bản mới.');
+    }
+  } catch (e) { console.error(e); }
 }
 
 function ok_() {
@@ -1943,7 +1956,12 @@ function diagnose() {
   const info = tg_('getWebhookInfo').result || {};
   console.log(`Webhook URL: ${info.url ? info.url.replace(/(secret=).*/, '$1***đã-ẩn') : '❌ CHƯA ĐẶT (chạy setWebhook)'}`);
   console.log(`Tin đang chờ: ${info.pending_update_count}`);
-  if (info.last_error_message) console.log(`Lỗi gần nhất từ Telegram: ${info.last_error_message}`);
+  if (info.last_error_message) {
+    const ago = info.last_error_date ? Math.round((Date.now() / 1000 - info.last_error_date) / 60) : null;
+    console.log(`Lỗi gần nhất từ Telegram: ${info.last_error_message}` + (ago != null ? ` (cách đây ${ago} phút)` : ''));
+  }
+  const registered = String(info.url || '').split('?')[0], configured = String(p.WEB_APP_URL || '').trim();
+  if (registered && configured) console.log(registered === configured ? '✅ Telegram đang trỏ đúng WEB_APP_URL.' : '❌ Telegram đang trỏ tới địa chỉ KHÁC WEB_APP_URL. Chạy lại setWebhook.');
   if (p.ALLOWED_CHAT_ID) {
     const r = tg_('sendMessage', { chat_id: p.ALLOWED_CHAT_ID.trim(), text: '🔧 Test từ diagnose(): bot gửi được tin cho bạn.' });
     console.log(r.ok ? 'Gửi tin thử: OK' : `❌ Gửi tin thử thất bại: ${r.description}`);
@@ -1963,7 +1981,13 @@ function testWebhook() {
   });
   const loc = res.getHeaders()['Location'] || '';
   console.log(`2. HTTP ${res.getResponseCode()} → ${loc ? loc.split('?')[0] + '?…(đã ẩn)' : res.getContentText().slice(0, 300)}`);
-  if (loc.indexOf('accounts.google.com') >= 0) console.log('❌ Bản deploy chưa cho phép "Bất kỳ ai" truy cập.');
-  else if (loc.indexOf('googleusercontent.com') >= 0) console.log('✅ Webhook chạy được. Telegram sẽ nhận được tin /today.');
+  if (loc.indexOf('accounts.google.com') >= 0) return console.log('❌ Bản deploy chưa cho phép "Bất kỳ ai" truy cập (Google đòi đăng nhập).');
+  if (loc.indexOf('googleusercontent.com') < 0) return console.log('❌ Không nhận được chuyển hướng quen thuộc của Apps Script. Kiểm tra WEB_APP_URL (phải là địa chỉ kết thúc bằng /exec).');
+  // Bước quyết định: xem web app TRẢ VỀ gì. Chạy đúng thì là chữ "ok". Nếu là trang HTML thì bản đã triển khai đang lỗi.
+  const body = UrlFetchApp.fetch(loc, { muteHttpExceptions: true }).getContentText();
+  const peek = body.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+  console.log(`3. Web app trả về: ${peek || '(rỗng)'}`);
+  if (body.trim() === 'ok') console.log('✅ Web app đã xử lý yêu cầu. Telegram sẽ nhận được tin /today (kiểm tra xem tin 📅 có về không).');
+  else console.log('❌ Web app KHÔNG trả về "ok": bản đã triển khai đang lỗi (thiếu quyền, lỗi cú pháp hoặc code cũ). Cấp quyền bằng cách chạy một hàm trong trình soạn thảo, rồi Triển khai → Phiên bản mới.');
 }
 
