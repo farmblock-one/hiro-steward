@@ -181,6 +181,13 @@ assert.ok(parsedNoAlias.externals.includes(ALIAS), 'không khai báo alias thì 
 assert.ok(!parsedAlias.externals.includes(ALIAS) && parsedAlias.externals.includes('a@client.com'), 'khai báo alias thì được tính là của tôi');
 env.props.EMAIL_ALIASES = ALIAS; assert.strictEqual(j(run('checkEmailAccount_()').mine), j([ME, ALIAS]));
 
+// --- 7c. Công cụ chẩn đoán chạy được và scanJob luôn báo kết quả ---
+geminiReply = () => Object.assign({}, base, { relevant: false });
+run('emailScanDebug()');
+env.ctx.__sent = [];
+const sentBefore = ctx.__calls.length;
+run('emailScanJob()');
+
 // --- 8. Quyền: manifest chỉ xin gmail.readonly ---
 const manifest = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '../src/appsscript.json'), 'utf8'));
 assert.ok(manifest.oauthScopes.includes('https://www.googleapis.com/auth/gmail.readonly'));

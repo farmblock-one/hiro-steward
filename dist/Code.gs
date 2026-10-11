@@ -1136,14 +1136,27 @@ function emailScanText_(r) {
 function emailScanNow_() {
   if (!emailEnabled_()) return emailScanText_({ error: 'Quét email đang tắt. Đọc README mục “Email”, rồi đặt Script Property EMAIL_ENABLED = 1.' });
   ScriptApp.newTrigger('emailScanJob').timeBased().after(60 * 1000).create();
-  return '📧 Mình sẽ quét email chỉ-đọc trong nền, khoảng 1–3 phút nữa báo kết quả.';
+  return '📧 Mình sẽ quét email chỉ-đọc trong nền (tối đa 12 luồng mới mỗi lượt), thường mất 2–5 phút, xong sẽ báo kết quả tại đây.';
 }
 
 function emailScanJob() {
   ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'emailScanJob').forEach(t => ScriptApp.deleteTrigger(t));
   const chatId = (prop_('ALLOWED_CHAT_ID') || '').trim();
-  const text = emailScanText_(emailScan_());
+  let text;
+  try { text = emailScanText_(emailScan_()); }
+  catch (e) { text = '📧 Quét email gặp lỗi: ' + String(e && e.message || e).slice(0, 300); } // luôn có tin báo, không im lặng
   if (chatId) send_(chatId, text);
+}
+
+/**
+ * Chạy tay trong trình soạn thảo: quét thử vài luồng ngay và in kết quả ra Nhật ký thực thi,
+ * không cần đợi trigger hay Telegram. Dùng để kiểm tra nhanh (mặc định 3 luồng).
+ */
+function emailScanDebug() {
+  const started = Date.now();
+  const r = emailScan_({ limit: 3 });
+  console.log(emailScanText_(r));
+  console.log(r.error ? 'Lỗi: ' + r.error : `Tìm thấy ${r.threads} luồng · phân tích ${r.analyzed} · bỏ qua ${r.skipped} · còn ${r.pending} · đề xuất mới ${r.suggested} · mất ${Math.round((Date.now() - started) / 1000)} giây`);
 }
 
 /** Chạy hằng ngày (trước bản tin 8h) để bản tin sáng có dữ liệu mới. */
