@@ -24,6 +24,7 @@ const threads = {
 };
 let mailbox = ['th1', 'th2', 'th3', 'th4', 'th5'];
 let geminiReply = null;
+const telegramSent = [];
 const prompts = [];
 env.setFetch((url, o) => {
   if (url.startsWith('https://gmail.googleapis.com/')) {
@@ -40,6 +41,7 @@ env.setFetch((url, o) => {
     const r = geminiReply(p); if (r.code) return r;
     return { body: { candidates: [{ content: { parts: [{ text: JSON.stringify(r) }] } }] } };
   }
+  if (url.includes('api.telegram.org')) { telegramSent.push(JSON.parse(o.payload).text); return { body: { ok: true } }; }
   throw new Error('URL lạ: ' + url);
 });
 const base = { relevant: true, company: 'ABC Corp', contact: 'Lan Nguyen', contact_email: 'lan@abccorp.vn', summary: 'Khách xin báo giá gói B cho 50 người.',
@@ -184,9 +186,17 @@ env.props.EMAIL_ALIASES = ALIAS; assert.strictEqual(j(run('checkEmailAccount_()'
 // --- 7c. Công cụ chẩn đoán chạy được và scanJob luôn báo kết quả ---
 geminiReply = () => Object.assign({}, base, { relevant: false });
 run('emailScanDebug()');
-env.ctx.__sent = [];
-const sentBefore = ctx.__calls.length;
+telegramSent.length = 0;
+ctx.ScriptApp._triggers.push({ getHandlerFunction: () => 'emailScanJob', fn: 'emailScanJob' });
 run('emailScanJob()');
+assert.strictEqual(telegramSent.length, 1, 'scan job luôn gửi 1 tin báo kết quả');
+assert.ok(telegramSent[0].includes('📧'), telegramSent[0]);
+assert.ok(!ctx.ScriptApp._triggers.some(t => t.fn === 'emailScanJob'), 'job tự xoá trigger một lần của nó');
+// Lỗi bất ngờ vẫn có tin báo, không im lặng
+const realRows = ctx.rows_; ctx.rows_ = () => { throw new Error('boom'); };
+telegramSent.length = 0; run('emailScanJob()');
+ctx.rows_ = realRows;
+assert.ok(telegramSent.length === 1 && telegramSent[0].includes('📧'), 'lỗi bất ngờ vẫn có tin báo: ' + telegramSent[0]);
 
 // --- 8. Quyền: manifest chỉ xin gmail.readonly ---
 const manifest = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '../src/appsscript.json'), 'utf8'));
