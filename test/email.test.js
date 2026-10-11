@@ -25,6 +25,7 @@ const threads = {
 let mailbox = ['th1', 'th2', 'th3', 'th4', 'th5'];
 let geminiReply = null;
 const telegramSent = [];
+const telegramRejectAstral = { on: false };
 const prompts = [];
 env.setFetch((url, o) => {
   if (url.startsWith('https://gmail.googleapis.com/')) {
@@ -42,7 +43,11 @@ env.setFetch((url, o) => {
     const r = geminiReply(p); if (r.code) return r;
     return { body: { candidates: [{ content: { parts: [{ text: JSON.stringify(r) }] } }] } };
   }
-  if (url.includes('api.telegram.org')) { telegramSent.push(JSON.parse(o.payload).text); return { body: { ok: true } }; }
+  if (url.includes('api.telegram.org')) {
+    const t = JSON.parse(o.payload).text;
+    if (telegramRejectAstral.on && /[\u{10000}-\u{10FFFF}]/u.test(t)) return { body: { ok: false, description: 'Bad Request: simulated rejection' } };
+    telegramSent.push(t); return { body: { ok: true } };
+  }
   throw new Error('URL lạ: ' + url);
 });
 const base = { relevant: true, company: 'ABC Corp', contact: 'Lan Nguyen', contact_email: 'lan@abccorp.vn', summary: 'Khách xin báo giá gói B cho 50 người.',
@@ -189,7 +194,7 @@ assert.ok(lq.includes('-category:promotions') && !lq.includes('labelIds='), lq);
 env.props.EMAIL_LABEL = ' 2. lead '; ctx.__calls.length = 0; run('emailScan_()');
 lq = decodeURIComponent(ctx.__calls.find(c => c.url.includes('/threads?')).url);
 assert.ok(lq.includes('labelIds=Label_7') && !lq.includes('category:') && !lq.includes('label:'), lq);
-assert.ok(ctx.__calls.some(c => c.url.endsWith('/labels')) && ctx.__calls.every(c => c.method === 'get'));
+assert.ok(ctx.__calls.some(c => c.url.endsWith('/labels')) && ctx.__calls.filter(c => c.url.includes('gmail.googleapis')).every(c => c.method === 'get'));
 env.props.EMAIL_LABEL = 'khách/vip'; ctx.__calls.length = 0; run('emailScan_()');
 assert.ok(decodeURIComponent(ctx.__calls.find(c => c.url.includes('/threads?')).url).includes('labelIds=Label_8'), 'nhãn con Cha/Con');
 // Nhãn sai: báo lỗi kèm danh sách nhãn thật và không tải luồng nào
@@ -198,7 +203,24 @@ const badLabel = run('emailScan_()');
 assert.ok(badLabel.errors.join(' ').includes('Không thấy nhãn') && badLabel.errors.join(' ').includes('2. Lead') && badLabel.errors.join(' ').includes('Khách/VIP'), j(badLabel));
 assert.ok(!ctx.__calls.some(c => c.url.includes('/threads')), 'nhãn sai thì không đọc luồng nào');
 run('emailListLabels()');
+// Chế độ nhãn: đọc hết, không bỏ qua, AI nói không liên quan vẫn là đề xuất, luồng 'không liên quan' cũ được đọc lại
+env.props.EMAIL_LABEL = '2. Lead';
+assert.strictEqual(run('emailDays_()'), 30); assert.strictEqual(run('emailMaxThreads_()'), 200);
+geminiReply = () => Object.assign({}, base, { relevant: false });
+mailbox = ['th3']; prompts.length = 0;
+const lm = run('emailScan_()');
+assert.strictEqual(lm.skipped, 0, 'có nhãn thì không bỏ qua luồng nào');
+assert.ok(rows().filter(r => r.thread === 'th3').every(r => r.status !== 'không liên quan'), 'có nhãn thì không tự loại');
+assert.ok(run('scheduleEmailChain_({ pending: 3, errors: [] })') === true && run('scheduleEmailChain_({ pending: 0, errors: [] })') === false);
+assert.ok(run("scheduleEmailChain_({ pending: 3, errors: ['429'] })") === true, 'lỗi quota vẫn tự quét tiếp');
 delete env.props.EMAIL_LABEL;
+
+// --- 7a. Chất lượng gợi ý: nội bộ, tên miền không phải công ty, văn phong ---
+assert.ok(p1.includes('NỘI BỘ') && p1.includes('không viết "người dùng"') && p1.includes('KHÔNG viết "Chờ ...".'), 'prompt có quy tắc nội bộ, văn phong, hành động follow-up');
+const dom = run(`sanitizeInsight_(${j({ relevant: true, company: 'getnsc.com', contact: 'Harry' })}, { lastDate: '${today}', lastFromMe: false }, [])`);
+assert.strictEqual(dom.company, '', 'tên miền không được dùng làm tên công ty');
+assert.strictEqual(run(`sanitizeInsight_(${j({ relevant: true, company: 'Sloop Pty Ltd' })}, { lastDate: '${today}', lastFromMe: false }, [])`).company, 'Sloop Pty Ltd');
+assert.strictEqual(run(`emailTitle_(${j({ company: '', contact: 'Harry', subject: 'x' })})`), 'Harry');
 
 // --- 7b. Địa chỉ phụ (alias): thư gửi từ alias vẫn là thư của tôi ---
 const aliasThread = { id: 'thA', historyId: '900', messages: [msg('mA', ALIAS, 'a@client.com', 'Báo giá', ago(1), 'Gửi anh báo giá'), msg('mB', 'A <a@client.com>', ALIAS, 'Re: Báo giá', ago(0), 'ok em')] };
@@ -243,6 +265,20 @@ telegramSent.length = 0;
 run(`doPost(${j({ parameter: { secret: 'sec' }, postData: { contents: j({ update_id: 987655, message: { chat: { id: 555 }, text: '/email' } }) } })})`);
 assert.strictEqual(telegramSent.length, 0, 'chỉ báo lỗi cho chat được phép');
 ctx.ScriptApp.newTrigger = realNewTrigger;
+
+// --- 7f. Gửi Telegram chắc chắn: tin bị từ chối thì gửi lại bản không emoji; tin dài không bị cắt giữa emoji ---
+telegramRejectAstral.on = true; telegramSent.length = 0;
+run(`send_('1', '🟠 #1 Khang B\\n📧 dòng hai ➜ ok')`);
+assert.strictEqual(telegramSent.length, 1, 'có gửi lại'); assert.ok(!/[\u{10000}-\u{10FFFF}]/u.test(telegramSent[0]) && telegramSent[0].includes('Khang B'), telegramSent[0]);
+telegramRejectAstral.on = false; telegramSent.length = 0;
+const longText = 'a'.repeat(3999) + '😀' + 'b'.repeat(10);
+run(`send_('1', ${j(longText)})`);
+assert.strictEqual(telegramSent.join(''), longText, 'ghép lại đúng nguyên văn');
+assert.ok(telegramSent.every(c => !/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(c)), 'không có nửa emoji');
+assert.ok(telegramSent.every(c => c.length <= 4000));
+const manyLines = Array.from({ length: 600 }, (_, i) => 'dòng ' + i + ' ' + 'x'.repeat(20)).join('\n');
+telegramSent.length = 0; run(`send_('1', ${j(manyLines)})`);
+assert.strictEqual(telegramSent.join(''), manyLines); assert.ok(telegramSent.length > 1 && telegramSent.every(c => c.length <= 4000));
 
 // --- 8. Quyền: manifest chỉ xin gmail.readonly ---
 const manifest = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '../src/appsscript.json'), 'utf8'));

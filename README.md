@@ -120,7 +120,7 @@ AI quét email 14 ngày gần nhất và cho bạn biết: **đang có lead nào
 5. Chạy `installTriggers` lại 1 lần (thêm lượt quét 7h sáng), rồi **Triển khai → Phiên bản mới**.
 6. Nhắn bot `/email`, đợi 1–3 phút, rồi `/emails`.
 
-Tuỳ chọn (Script Properties): `EMAIL_DAYS` (mặc định 14), `EMAIL_MAX_THREADS` (40), `EMAIL_PER_RUN` (12 luồng/lượt, để không vượt hạn mức Gemini), `EMAIL_LABEL` (chỉ quét luồng mang đúng nhãn Gmail này, vd. `2. Lead`; không phân biệt hoa thường, nhãn con ghi `Cha/Con`; chạy `emailListLabels` để xem tên chính xác. Khi đặt nhãn thì không loại theo thư mục Quảng cáo/Cập nhật nữa, vì bạn đã chủ động gắn nhãn. Lưu ý: cả luồng được đọc, kể cả thư trả lời trong luồng đó chưa gắn nhãn), `EMAIL_SKIP_DOMAINS` (vd. `congtyban.com, vendor.com`), `EMAIL_ALIASES` (các địa chỉ gửi đi khác của bạn, để thư gửi từ alias không bị coi là thư của đối tác), `EMAIL_INCLUDE_INTERNAL=1` (quét cả email nội bộ), `GEMINI_EMAIL_MODEL`, `EMAIL_CONTEXT` (1–2 câu mô tả công việc để AI phân biệt khách hàng với thư chào hàng, vd. “Tôi là Account Manager của công ty X, bán dịch vụ phần mềm cho doanh nghiệp. Thư nhà cung cấp chào bán cho tôi không phải lead.”). Sau khi đặt `EMAIL_CONTEXT`, chạy `emailResetAnalysis` để xoá kết quả cũ rồi quét lại.
+Tuỳ chọn (Script Properties): `EMAIL_DAYS` (mặc định 14), `EMAIL_MAX_THREADS` (40), `EMAIL_PER_RUN` (12 luồng/lượt, để không vượt hạn mức Gemini), `EMAIL_LABEL` (chỉ quét luồng mang đúng nhãn Gmail này, vd. `2. Lead`; không phân biệt hoa thường, nhãn con ghi `Cha/Con`; chạy `emailListLabels` để xem tên chính xác. **Khi đặt nhãn, tool đọc HẾT mọi luồng có nhãn và không tự bỏ qua hay tự loại luồng nào**: bỏ qua các bộ lọc `EMAIL_SKIP_DOMAINS`, nội bộ, thư tự động, thư mục Quảng cáo/Cập nhật; AI luôn tóm tắt và đề xuất next action. Mặc định đọc 30 ngày / 200 luồng, và tự quét tiếp mỗi phút (tối đa 30 lượt) cho tới khi đọc hết. Lưu ý: cả luồng được đọc, kể cả thư trả lời trong luồng đó chưa gắn nhãn), `EMAIL_SKIP_DOMAINS` (vd. `congtyban.com, vendor.com`), `EMAIL_ALIASES` (các địa chỉ gửi đi khác của bạn, để thư gửi từ alias không bị coi là thư của đối tác), `EMAIL_INCLUDE_INTERNAL=1` (quét cả email nội bộ), `GEMINI_EMAIL_MODEL`, `EMAIL_CONTEXT` (1–2 câu mô tả công việc để AI phân biệt khách hàng với thư chào hàng, vd. “Tôi là Account Manager của công ty X, bán dịch vụ phần mềm cho doanh nghiệp. Thư nhà cung cấp chào bán cho tôi không phải lead.”). Sau khi đặt `EMAIL_CONTEXT`, chạy `emailResetAnalysis` để xoá kết quả cũ rồi quét lại.
 
 ### Nhiều tài khoản Google: script sẽ đọc hộp thư nào?
 Script đọc hộp thư của **tài khoản Google đã triển khai web app và tạo trigger**, không phải tài khoản bạn đang mở trong tab trình duyệt. Dấu hiệu: ảnh đại diện góc phải trên của trình soạn thảo Apps Script là tài khoản chủ project.
@@ -159,11 +159,22 @@ Giao diện nằm ở `docs/` (HTML tĩnh, theme mèo cam 🐱 + tiền 🪙, t�
 
 Link cũ `…/exec?key=…` vẫn dùng được song song.
 
+## Telegram: webhook hay polling?
+
+Mặc định bot nhận tin qua **webhook**. Nhược điểm của Apps Script: web app luôn trả mã 302, Telegram coi mọi tin là lỗi nên gửi lại nhiều lần, và có thể giao trễ hoặc không giao (nhật ký `diagnose` hiện `Wrong response from the webhook: 302 Found`). Web app còn phải để “Bất kỳ ai”, mà tài khoản Google Workspace của công ty có thể chặn điều này.
+
+**Polling** là cách thay thế: script tự hỏi Telegram mỗi phút. Không cần web app công khai, không có 302, không gửi lại, đổi lại bot trả lời chậm tối đa khoảng 1 phút.
+
+- Bật: chạy hàm **`usePolling`** một lần (xoá webhook, bật trigger mỗi phút; tin nhắn cũ chưa xử lý bị bỏ). Trigger chạy **code mới nhất bạn lưu**, không cần “Phiên bản mới”.
+- Quay lại webhook: chạy **`setWebhook`** (tự tắt trigger polling).
+- Kiểm tra: `diagnose` in ra chế độ đang dùng. Mỗi lượt polling chỉ mất khoảng 1 giây, nằm xa dưới hạn mức thời gian trigger của Apps Script.
+- Web app trên điện thoại (giao diện) vẫn cần “Bất kỳ ai” để gọi API, polling chỉ thay phần Telegram.
+
 ## Phát triển
 
 ```bash
 npm run build   # sinh src/Index.html (bản trong Apps Script) và dist/Code.gs (1 file để dán) từ docs/index.html + src/*.gs
-npm test        # test parser tiền/ngày và toàn bộ luồng lead (có Google Sheet giả)
+npm test        # test parser tiền/ngày, luồng lead, email và Telegram (có Google Sheet, Gmail, Gemini, Telegram giả)
 ```
 
 - Giao diện chỉ sửa ở **`docs/index.html`**; `src/Index.html` và `dist/Code.gs` là file sinh tự động, đừng sửa tay.
@@ -194,7 +205,7 @@ src/
 docs/             web app (nguồn duy nhất) cho GitHub Pages, gọi API qua fetch
 dist/Code.gs      file sinh tự động: toàn bộ .gs gộp thành 1 để dán vào Apps Script
 scripts/build.js  sinh src/Index.html và dist/Code.gs
-test/             parse.test.js, leads.test.js, email.test.js, harness.js (Sheet giả)
+test/             parse.test.js, leads.test.js, email.test.js, telegram.test.js, harness.js (Sheet giả)
 ```
 
 Muốn thêm danh mục hoặc từ khoá thì sửa `CATEGORIES` trong `Config.gs`.

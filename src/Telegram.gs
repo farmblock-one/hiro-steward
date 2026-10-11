@@ -7,11 +7,35 @@ function tg_(method, payload) {
   return data;
 }
 
-function send_(chatId, text) {
-  // Telegram giới hạn 4096 ký tự/tin.
-  for (let i = 0; i < text.length; i += 4000) {
-    tg_('sendMessage', { chat_id: chatId, text: text.slice(i, i + 4000), disable_web_page_preview: true });
+/** Cắt tin dài theo ranh giới dòng, không bao giờ cắt giữa một emoji (cặp ký tự thay thế). */
+function chunkText_(text, size) {
+  const out = []; let i = 0;
+  while (i < text.length) {
+    let end = Math.min(i + size, text.length);
+    if (end < text.length) {
+      const nl = text.lastIndexOf('\n', end);
+      if (nl > i + size / 2) end = nl + 1;
+      const c = text.charCodeAt(end - 1);
+      if (c >= 0xd800 && c <= 0xdbff) end--;
+    }
+    out.push(text.slice(i, end)); i = end;
   }
+  return out;
+}
+
+/**
+ * Gửi tin cho Telegram (tối đa 4096 ký tự mỗi tin). Nếu Telegram từ chối, thử lại bản đã bỏ emoji/ký tự đặc biệt
+ * để tin chắc chắn tới được, và ghi rõ lý do từ chối vào nhật ký.
+ */
+function send_(chatId, text) {
+  chunkText_(String(text), 4000).forEach(chunk => {
+    let r = tg_('sendMessage', { chat_id: chatId, text: chunk, disable_web_page_preview: true });
+    if (!r.ok) {
+      console.error('Telegram từ chối tin, thử lại không emoji: ' + (r.description || ''));
+      const plain = chunk.replace(/[\u{10000}-\u{10FFFF}\u200d\ufe0f]/gu, '').replace(/[^\S\n]{2,}/g, ' ').trim();
+      r = tg_('sendMessage', { chat_id: chatId, text: plain || '(tin nhắn trống)', disable_web_page_preview: true });
+    }
+  });
 }
 
 function downloadTelegramFile_(fileId) {
@@ -60,4 +84,42 @@ function webAppLink_() {
   // Hash (#...) không bao giờ gửi lên server nên key không lộ qua log của GitHub.
   if (pages && api) return `${pages}#key=${encodeURIComponent(key)}&api=${encodeURIComponent(api)}`;
   return api ? `${api}?key=${encodeURIComponent(key)}` : null;
+}
+
+// ---------- Chế độ polling (thay cho webhook) ----------
+// Webhook của Apps Script luôn trả 302 nên Telegram coi mọi tin là lỗi, gửi lại và có thể trễ hoặc không giao.
+// Polling thì script tự hỏi Telegram mỗi phút: không cần web app công khai, không có 302, trả lời chậm tối đa ~1 phút.
+
+/** Chuyển sang polling: xoá webhook, bật trigger mỗi phút. Quay lại webhook bằng setWebhook. */
+function usePolling() {
+  const r = tg_('deleteWebhook', { drop_pending_updates: true });
+  if (!r.ok) throw new Error('Không xoá được webhook: ' + (r.description || ''));
+  setProp_('TELEGRAM_MODE', 'poll');
+  setProp_('TG_OFFSET', '0');
+  setProp_('TG_POLL_BUSY', '0');
+  setBotCommands_();
+  ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'pollTelegram').forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('pollTelegram').timeBased().everyMinutes(1).create();
+  console.log('✅ Đã chuyển sang polling. Nhắn /help cho bot, tối đa ~1 phút sẽ có trả lời. Tin nhắn cũ chưa xử lý đã bị bỏ.');
+}
+
+/** Chạy mỗi phút: lấy tin mới từ Telegram và xử lý. Mỗi tin chỉ xử lý một lần (lưu mốc trước khi xử lý). */
+function pollTelegram() {
+  if (prop_('TELEGRAM_MODE') !== 'poll') return;
+  const busy = Number(prop_('TG_POLL_BUSY')) || 0;
+  if (Date.now() - busy < 55000) return; // một lượt trước còn đang chạy
+  setProp_('TG_POLL_BUSY', Date.now());
+  try {
+    const offset = Number(prop_('TG_OFFSET')) || 0;
+    const r = tg_('getUpdates', { offset: offset || undefined, timeout: 0, limit: 20, allowed_updates: ['message'] });
+    const updates = r.ok ? r.result || [] : [];
+    if (!updates.length) return;
+    setProp_('TG_OFFSET', updates[updates.length - 1].update_id + 1);
+    updates.forEach(u => {
+      try { handleUpdate_(u); }
+      catch (err) { console.error(err && err.stack || err); notifyHandlerError_(u, err); }
+    });
+  } finally {
+    setProp_('TG_POLL_BUSY', '0');
+  }
 }
