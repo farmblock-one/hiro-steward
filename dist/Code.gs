@@ -831,13 +831,14 @@ function leadAttentionText_() {
  */
 
 const GMAIL_API = 'https://gmail.googleapis.com/gmail/v1/users/me/';
-const EMAIL_DEFAULTS = { DAYS: 14, MAX_THREADS: 40, LABEL_DAYS: 30, LABEL_MAX_THREADS: 200, PER_RUN: 12, SLEEP_MS: 8000, THREAD_CHARS: 6000, MSG_CHARS: 1200, BUDGET_MS: 270000 };
+const EMAIL_DEFAULTS = { DAYS: 14, MAX_THREADS: 40, LABEL_MAX_THREADS: 5000, THREAD_MSGS: 6, PER_RUN: 12, SLEEP_MS: 8000, THREAD_CHARS: 6000, MSG_CHARS: 1200, BUDGET_MS: 270000 };
 const PUBLIC_MAIL_DOMAINS = ['gmail.com', 'googlemail.com', 'outlook.com', 'hotmail.com', 'live.com', 'yahoo.com', 'icloud.com', 'proton.me', 'protonmail.com'];
 const AUTOMATED_SENDER_RE = /(^|[^a-z])(no-?reply|do-?not-?reply|notifications?|mailer-daemon|newsletter|bounces?|alerts?)([^a-z]|$)/i;
 
 /** Có EMAIL_LABEL: bạn đã tự chọn luồng nào cần theo dõi, nên tool đọc hết và KHÔNG tự bỏ qua hay tự loại luồng nào. */
 function emailLabelMode_() { return !!(prop_('EMAIL_LABEL') || '').trim(); }
-function emailDays_() { return emailNum_('EMAIL_DAYS', emailLabelMode_() ? EMAIL_DEFAULTS.LABEL_DAYS : EMAIL_DEFAULTS.DAYS); }
+/** 0 = không giới hạn thời gian (chế độ nhãn: đọc mọi luồng có nhãn, trừ khi bạn tự đặt EMAIL_DAYS). */
+function emailDays_() { return emailNum_('EMAIL_DAYS', emailLabelMode_() ? 0 : EMAIL_DEFAULTS.DAYS); }
 function emailMaxThreads_() { return emailNum_('EMAIL_MAX_THREADS', emailLabelMode_() ? EMAIL_DEFAULTS.LABEL_MAX_THREADS : EMAIL_DEFAULTS.MAX_THREADS); }
 function emailEnabled_() { return prop_('EMAIL_ENABLED') === '1'; }
 function emailNum_(key, def) { const n = Number(prop_(key)); return n > 0 ? n : def; }
@@ -887,7 +888,8 @@ function resolveEmailLabel_(name) {
  * khoảng trắng hay tiếng Việt đều chính xác) và KHÔNG loại theo thư mục Quảng cáo/Cập nhật, vì bạn đã chủ động gắn nhãn.
  */
 function listEmailThreads_(days, max) {
-  const q = [`newer_than:${days}d`, '-in:spam', '-in:trash'];
+  const q = ['-in:spam', '-in:trash'];
+  if (days > 0) q.unshift(`newer_than:${days}d`);
   const label = (prop_('EMAIL_LABEL') || '').trim();
   const labelId = label ? resolveEmailLabel_(label) : '';
   if (!label) q.push('-category:promotions', '-category:social', '-category:updates', '-category:forums');
@@ -988,7 +990,9 @@ function buildThread_(thread, meOrList) {
   if (!labelMode && skipDomains.length && externals.every(a => skipDomains.some(d => a.endsWith('@' + d) || a.endsWith('.' + d)))) return Object.assign(base, { skip: true, reason: 'tên miền bị loại' });
   if (!labelMode && inbound.length && inbound.every(m => AUTOMATED_SENDER_RE.test(m.fromAddr))) return Object.assign(base, { skip: true, reason: 'email tự động' });
 
-  const shown = parsed.length > 6 ? [parsed[0]].concat(parsed.slice(-5)) : parsed;
+  // Giới hạn số thư đọc trong MỖI luồng (thư đầu + các thư mới nhất); số luồng thì không giới hạn.
+  const perThread = Math.max(2, emailNum_('EMAIL_THREAD_MSGS', EMAIL_DEFAULTS.THREAD_MSGS));
+  const shown = parsed.length > perThread ? [parsed[0]].concat(parsed.slice(-(perThread - 1))) : parsed;
   let digest = shown.map(m => `[${m.date}] ${m.mine ? 'TÔI' : 'ĐỐI TÁC'} <${m.fromAddr}>: ${m.text || '(không có nội dung)'}`).join('\n\n');
   const cap = emailNum_('EMAIL_THREAD_CHARS', EMAIL_DEFAULTS.THREAD_CHARS);
   if (digest.length > cap) digest = digest.slice(digest.length - cap); // giữ phần mới nhất
@@ -1168,7 +1172,7 @@ function emailScanText_(r, brief) {
   if (r.error) return '📧 ' + r.error;
   const a = emailAttention_();
   const lm = emailLabelMode_();
-  let out = `📧 Quét email xong: ${r.threads} luồng${lm ? ` có nhãn “${(prop_('EMAIL_LABEL') || '').trim()}”` : ''} trong ${emailDays_()} ngày, phân tích mới ${r.analyzed}` +
+  let out = `📧 Quét email xong: ${r.threads} luồng${lm ? ` có nhãn “${(prop_('EMAIL_LABEL') || '').trim()}”` : ''} ${emailDays_() > 0 ? `trong ${emailDays_()} ngày` : '(mọi thời gian)'}, phân tích mới ${r.analyzed}` +
     (lm ? '' : `, bỏ qua ${r.skipped}`) + (r.pending ? `, còn ${r.pending} luồng chưa đọc (tự quét tiếp sau ~${r.errors.length ? 4 : 1} phút)` : lm ? ', đã đọc hết, không bỏ sót luồng nào' : '') + '.';
   if (r.errors.length) out += '\n⚠️ ' + r.errors.slice(0, 3).join('\n⚠️ ');
   if (!brief && a && (a.suggestions.length || a.waitingMe.length)) out += `\n\n${emailAttentionText_()}`;
@@ -1182,7 +1186,7 @@ function emailScanNow_() {
   return '📧 Mình sẽ quét email chỉ-đọc trong nền (tối đa 12 luồng mới mỗi lượt), thường mất 2–5 phút, xong sẽ báo kết quả tại đây.';
 }
 
-/** Còn luồng chưa đọc thì hẹn thêm 1 lượt sau ~1 phút, tối đa 30 lượt liên tiếp. */
+/** Còn luồng chưa đọc thì hẹn thêm 1 lượt sau ~1 phút, tối đa 100 lượt liên tiếp. */
 function scheduleEmailChain_(res) {
   if (!res || res.error || !(res.pending > 0)) { setProp_('EMAIL_CHAIN', '0'); return false; }
   // Hai lượt liên tiếp không đọc thêm được luồng nào mà còn lỗi (thường là hết hạn mức Gemini): dừng, đừng spam.
@@ -1190,7 +1194,7 @@ function scheduleEmailChain_(res) {
   setProp_('EMAIL_STALL', stall);
   if (stall >= 2) { setProp_('EMAIL_CHAIN', '0'); setProp_('EMAIL_STALL', '0'); return 'stalled'; }
   const n = Number(prop_('EMAIL_CHAIN')) || 0;
-  if (n >= 30) { setProp_('EMAIL_CHAIN', '0'); return false; }
+  if (n >= 100) { setProp_('EMAIL_CHAIN', '0'); return false; }
   setProp_('EMAIL_CHAIN', n + 1);
   ScriptApp.newTrigger('emailScanJob').timeBased().after((res.errors && res.errors.length ? 4 : 1) * 60 * 1000).create(); // gặp lỗi (thường 429 quota Gemini) thì chờ lâu hơn
   return true;
@@ -1353,7 +1357,7 @@ function emailDashboard_() {
 /**
  * AI qua Gemini API (free tier của Google AI Studio). Không bắt buộc:
  * thiếu GEMINI_API_KEY thì bot vẫn chạy bằng parser quy tắc, chỉ mất voice + hiểu câu tự do.
- * Đổi model bằng Script Property GEMINI_MODEL (vd. gemini-2.0-flash, gemini-2.5-flash-lite).
+ * Đổi model bằng Script Property GEMINI_MODEL (vd. gemini-flash-lite-latest để rẻ hơn).
  */
 
 function aiEnabled_() {
@@ -1368,7 +1372,7 @@ function gemini_(parts, asJson, opts) {
   const key = opts.key || prop_('GEMINI_API_KEY');
   GEMINI_STATE.lastError = '';
   if (!key) { GEMINI_STATE.lastError = 'chưa có API key'; return null; }
-  const model = opts.model || prop_('GEMINI_MODEL') || 'gemini-2.5-flash';
+  const model = opts.model || prop_('GEMINI_MODEL') || 'gemini-flash-latest';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
   const body = {
     contents: [{ role: 'user', parts }],
@@ -1380,7 +1384,9 @@ function gemini_(parts, asJson, opts) {
   });
   if (res.getResponseCode() !== 200) {
     console.error('Gemini error', res.getResponseCode(), res.getContentText().slice(0, 300));
-    GEMINI_STATE.lastError = 'HTTP ' + res.getResponseCode();
+    let why = '';
+    try { why = JSON.parse(res.getContentText()).error.message || ''; } catch (e) { /* không phải JSON */ }
+    GEMINI_STATE.lastError = `HTTP ${res.getResponseCode()} (model ${model})` + (why ? ': ' + why.slice(0, 160) : '');
     return null;
   }
   const data = JSON.parse(res.getContentText());
@@ -1426,6 +1432,22 @@ function aiCategory_(desc) {
   const r = gemini_([{ text: `Khoản chi "${desc}" thuộc danh mục nào trong ${JSON.stringify(cats)}? ` +
       'Trả về JSON {"category": "..."}' }], true);
   return r && cats.indexOf(r.category) >= 0 ? r.category : null;
+}
+
+/**
+ * Chạy tay để kiểm tra key + model Gemini dành cho email: in ra model đang dùng, kết quả gọi thử,
+ * và nếu model không tồn tại thì liệt kê các model mà key này dùng được.
+ */
+function testGeminiEmail() {
+  const o = emailGeminiOpts_();
+  console.log(`Key email: ${prop_('GEMINI_EMAIL_KEY') ? 'GEMINI_EMAIL_KEY' : 'GEMINI_API_KEY (chưa đặt key riêng)'} · model: ${o.model || prop_('GEMINI_MODEL') || 'gemini-flash-latest'}`);
+  const r = gemini_([{ text: 'Trả về JSON {"ok":true}' }], true, o);
+  if (r) return console.log('✅ Gemini trả lời bình thường: ' + JSON.stringify(r));
+  console.log('❌ ' + GEMINI_STATE.lastError);
+  const res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=100', { headers: { 'x-goog-api-key': o.key || '' }, muteHttpExceptions: true });
+  if (res.getResponseCode() !== 200) return console.log('Không liệt kê được model: HTTP ' + res.getResponseCode() + ' ' + res.getContentText().slice(0, 200));
+  const names = (JSON.parse(res.getContentText()).models || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent')).map(m => m.name.replace('models/', ''));
+  console.log('Model dùng được với key này (chép đúng vào GEMINI_EMAIL_MODEL):\n' + names.filter(n => /flash/.test(n)).join('\n'));
 }
 
 

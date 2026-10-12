@@ -193,7 +193,7 @@ assert.ok(lq.includes('-category:promotions') && !lq.includes('labelIds='), lq);
 // Đặt nhãn: tra theo tên (không phân biệt hoa thường), lọc theo id nhãn, không loại thư mục nữa
 env.props.EMAIL_LABEL = ' 2. lead '; ctx.__calls.length = 0; run('emailScan_()');
 lq = decodeURIComponent(ctx.__calls.find(c => c.url.includes('/threads?')).url);
-assert.ok(lq.includes('labelIds=Label_7') && !lq.includes('category:') && !lq.includes('label:'), lq);
+assert.ok(lq.includes('labelIds=Label_7') && !lq.includes('newer_than') && !lq.includes('category:') && !lq.includes('label:'), lq);
 assert.ok(ctx.__calls.some(c => c.url.endsWith('/labels')) && ctx.__calls.filter(c => c.url.includes('gmail.googleapis')).every(c => c.method === 'get'));
 env.props.EMAIL_LABEL = 'khách/vip'; ctx.__calls.length = 0; run('emailScan_()');
 assert.ok(decodeURIComponent(ctx.__calls.find(c => c.url.includes('/threads?')).url).includes('labelIds=Label_8'), 'nhãn con Cha/Con');
@@ -205,7 +205,7 @@ assert.ok(!ctx.__calls.some(c => c.url.includes('/threads')), 'nhãn sai thì kh
 run('emailListLabels()');
 // Chế độ nhãn: đọc hết, không bỏ qua, AI nói không liên quan vẫn là đề xuất, luồng 'không liên quan' cũ được đọc lại
 env.props.EMAIL_LABEL = '2. Lead';
-assert.strictEqual(run('emailDays_()'), 30); assert.strictEqual(run('emailMaxThreads_()'), 200);
+assert.strictEqual(run('emailDays_()'), 0); assert.ok(run('emailMaxThreads_()') >= 5000);
 geminiReply = () => Object.assign({}, base, { relevant: false });
 mailbox = ['th3']; prompts.length = 0;
 const lm = run('emailScan_()');
