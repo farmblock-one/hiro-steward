@@ -12,13 +12,14 @@
  */
 
 const GMAIL_API = 'https://gmail.googleapis.com/gmail/v1/users/me/';
-const EMAIL_DEFAULTS = { DAYS: 14, MAX_THREADS: 40, LABEL_DAYS: 30, LABEL_MAX_THREADS: 200, PER_RUN: 12, SLEEP_MS: 8000, THREAD_CHARS: 6000, MSG_CHARS: 1200, BUDGET_MS: 270000 };
+const EMAIL_DEFAULTS = { DAYS: 14, MAX_THREADS: 40, LABEL_MAX_THREADS: 5000, THREAD_MSGS: 6, PER_RUN: 12, SLEEP_MS: 8000, THREAD_CHARS: 6000, MSG_CHARS: 1200, BUDGET_MS: 270000 };
 const PUBLIC_MAIL_DOMAINS = ['gmail.com', 'googlemail.com', 'outlook.com', 'hotmail.com', 'live.com', 'yahoo.com', 'icloud.com', 'proton.me', 'protonmail.com'];
 const AUTOMATED_SENDER_RE = /(^|[^a-z])(no-?reply|do-?not-?reply|notifications?|mailer-daemon|newsletter|bounces?|alerts?)([^a-z]|$)/i;
 
 /** Có EMAIL_LABEL: bạn đã tự chọn luồng nào cần theo dõi, nên tool đọc hết và KHÔNG tự bỏ qua hay tự loại luồng nào. */
 function emailLabelMode_() { return !!(prop_('EMAIL_LABEL') || '').trim(); }
-function emailDays_() { return emailNum_('EMAIL_DAYS', emailLabelMode_() ? EMAIL_DEFAULTS.LABEL_DAYS : EMAIL_DEFAULTS.DAYS); }
+/** 0 = không giới hạn thời gian (chế độ nhãn: đọc mọi luồng có nhãn, trừ khi bạn tự đặt EMAIL_DAYS). */
+function emailDays_() { return emailNum_('EMAIL_DAYS', emailLabelMode_() ? 0 : EMAIL_DEFAULTS.DAYS); }
 function emailMaxThreads_() { return emailNum_('EMAIL_MAX_THREADS', emailLabelMode_() ? EMAIL_DEFAULTS.LABEL_MAX_THREADS : EMAIL_DEFAULTS.MAX_THREADS); }
 function emailEnabled_() { return prop_('EMAIL_ENABLED') === '1'; }
 function emailNum_(key, def) { const n = Number(prop_(key)); return n > 0 ? n : def; }
@@ -68,7 +69,8 @@ function resolveEmailLabel_(name) {
  * khoảng trắng hay tiếng Việt đều chính xác) và KHÔNG loại theo thư mục Quảng cáo/Cập nhật, vì bạn đã chủ động gắn nhãn.
  */
 function listEmailThreads_(days, max) {
-  const q = [`newer_than:${days}d`, '-in:spam', '-in:trash'];
+  const q = ['-in:spam', '-in:trash'];
+  if (days > 0) q.unshift(`newer_than:${days}d`);
   const label = (prop_('EMAIL_LABEL') || '').trim();
   const labelId = label ? resolveEmailLabel_(label) : '';
   if (!label) q.push('-category:promotions', '-category:social', '-category:updates', '-category:forums');
@@ -169,7 +171,9 @@ function buildThread_(thread, meOrList) {
   if (!labelMode && skipDomains.length && externals.every(a => skipDomains.some(d => a.endsWith('@' + d) || a.endsWith('.' + d)))) return Object.assign(base, { skip: true, reason: 'tên miền bị loại' });
   if (!labelMode && inbound.length && inbound.every(m => AUTOMATED_SENDER_RE.test(m.fromAddr))) return Object.assign(base, { skip: true, reason: 'email tự động' });
 
-  const shown = parsed.length > 6 ? [parsed[0]].concat(parsed.slice(-5)) : parsed;
+  // Giới hạn số thư đọc trong MỖI luồng (thư đầu + các thư mới nhất); số luồng thì không giới hạn.
+  const perThread = Math.max(2, emailNum_('EMAIL_THREAD_MSGS', EMAIL_DEFAULTS.THREAD_MSGS));
+  const shown = parsed.length > perThread ? [parsed[0]].concat(parsed.slice(-(perThread - 1))) : parsed;
   let digest = shown.map(m => `[${m.date}] ${m.mine ? 'TÔI' : 'ĐỐI TÁC'} <${m.fromAddr}>: ${m.text || '(không có nội dung)'}`).join('\n\n');
   const cap = emailNum_('EMAIL_THREAD_CHARS', EMAIL_DEFAULTS.THREAD_CHARS);
   if (digest.length > cap) digest = digest.slice(digest.length - cap); // giữ phần mới nhất
@@ -349,7 +353,7 @@ function emailScanText_(r, brief) {
   if (r.error) return '📧 ' + r.error;
   const a = emailAttention_();
   const lm = emailLabelMode_();
-  let out = `📧 Quét email xong: ${r.threads} luồng${lm ? ` có nhãn “${(prop_('EMAIL_LABEL') || '').trim()}”` : ''} trong ${emailDays_()} ngày, phân tích mới ${r.analyzed}` +
+  let out = `📧 Quét email xong: ${r.threads} luồng${lm ? ` có nhãn “${(prop_('EMAIL_LABEL') || '').trim()}”` : ''} ${emailDays_() > 0 ? `trong ${emailDays_()} ngày` : '(mọi thời gian)'}, phân tích mới ${r.analyzed}` +
     (lm ? '' : `, bỏ qua ${r.skipped}`) + (r.pending ? `, còn ${r.pending} luồng chưa đọc (tự quét tiếp sau ~${r.errors.length ? 4 : 1} phút)` : lm ? ', đã đọc hết, không bỏ sót luồng nào' : '') + '.';
   if (r.errors.length) out += '\n⚠️ ' + r.errors.slice(0, 3).join('\n⚠️ ');
   if (!brief && a && (a.suggestions.length || a.waitingMe.length)) out += `\n\n${emailAttentionText_()}`;
@@ -363,7 +367,7 @@ function emailScanNow_() {
   return '📧 Mình sẽ quét email chỉ-đọc trong nền (tối đa 12 luồng mới mỗi lượt), thường mất 2–5 phút, xong sẽ báo kết quả tại đây.';
 }
 
-/** Còn luồng chưa đọc thì hẹn thêm 1 lượt sau ~1 phút, tối đa 30 lượt liên tiếp. */
+/** Còn luồng chưa đọc thì hẹn thêm 1 lượt sau ~1 phút, tối đa 100 lượt liên tiếp. */
 function scheduleEmailChain_(res) {
   if (!res || res.error || !(res.pending > 0)) { setProp_('EMAIL_CHAIN', '0'); return false; }
   // Hai lượt liên tiếp không đọc thêm được luồng nào mà còn lỗi (thường là hết hạn mức Gemini): dừng, đừng spam.
@@ -371,7 +375,7 @@ function scheduleEmailChain_(res) {
   setProp_('EMAIL_STALL', stall);
   if (stall >= 2) { setProp_('EMAIL_CHAIN', '0'); setProp_('EMAIL_STALL', '0'); return 'stalled'; }
   const n = Number(prop_('EMAIL_CHAIN')) || 0;
-  if (n >= 30) { setProp_('EMAIL_CHAIN', '0'); return false; }
+  if (n >= 100) { setProp_('EMAIL_CHAIN', '0'); return false; }
   setProp_('EMAIL_CHAIN', n + 1);
   ScriptApp.newTrigger('emailScanJob').timeBased().after((res.errors && res.errors.length ? 4 : 1) * 60 * 1000).create(); // gặp lỗi (thường 429 quota Gemini) thì chờ lâu hơn
   return true;
