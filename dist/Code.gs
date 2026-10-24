@@ -22,7 +22,7 @@ const SHEETS = {
   },
   TASKS: {
     name: 'Tasks',
-    headers: ['ID', 'Công việc', 'Trạng thái', 'Hạn', 'Dự án', 'Ngày tạo', 'Ngày xong'],
+    headers: ['ID', 'Công việc', 'Trạng thái', 'Hạn', 'Dự án', 'Ngày tạo', 'Ngày xong', 'Ưu tiên'],
   },
   LEADS: {
     name: 'Leads',
@@ -74,6 +74,13 @@ const CATEGORIES = {
   'Quà tặng': ['quà', 'biếu', 'mừng', 'đám cưới', 'sinh nhật', 'từ thiện'],
 };
 const DEFAULT_CATEGORY = 'Khác';
+
+// Ưu tiên công việc. Sheet lưu `label`.
+const TASK_PRIORITIES = [
+  { key: 'high', label: 'Cao', icon: '🔴' },
+  { key: 'medium', label: 'Vừa', icon: '🟡' },
+  { key: 'low', label: 'Thấp', icon: '🟢' },
+];
 
 const TASK_STATUS = { TODO: 'todo', DOING: 'doing', DONE: 'done' };
 
@@ -468,30 +475,79 @@ function tasks_(includeDone) {
   return rows_(SHEETS.TASKS)
     .map(r => ({
       id: Number(r.values[0]), title: String(r.values[1]), status: String(r.values[2] || TASK_STATUS.TODO),
-      due: dayKey_(r.values[3]), project: String(r.values[4] || ''), row: r.row,
+      due: dayKey_(r.values[3]), project: String(r.values[4] || ''), priority: priorityKey_(r.values[7]) || 'medium', row: r.row,
     }))
     .filter(t => t.id && (includeDone || t.status !== TASK_STATUS.DONE));
 }
 
-/** Tách hạn chót và #dự án khỏi tiêu đề. */
+function priorityKey_(v) {
+  const k = fold_(v);
+  const hit = TASK_PRIORITIES.find(p => p.key === k || fold_(p.label) === k);
+  return hit ? hit.key : '';
+}
+const priorityOf_ = key => TASK_PRIORITIES.find(p => p.key === key) || TASK_PRIORITIES[1];
+
+const PRIORITY_LOW_RE = /(?<![\p{L}\d])(?:không gấp|khong gap|từ từ|khi rảnh|ưu tiên thấp)(?![\p{L}\d])/iu;
+const PRIORITY_HIGH_RE = /(?<![\p{L}\d])(?:gấp|khẩn(?: cấp)?|urgent|ưu tiên cao|rất quan trọng|quan trọng)(?![\p{L}\d])|!{2,}/iu;
+
+/** Tách hạn chót, #dự án và mức ưu tiên khỏi tiêu đề. priority rỗng nếu không nhắc tới. */
 function parseTaskText_(text) {
   let title = ' ' + String(text).trim() + ' ';
-  let project = '';
+  let project = '', priority = '';
   const p = title.match(/\s#([\p{L}\d_\-]+)/u);
   if (p) { project = p[1]; title = title.replace(p[0], ' '); }
+  let m = title.match(PRIORITY_LOW_RE);
+  if (m) { priority = 'low'; title = title.replace(m[0], ' '); }
+  else if ((m = title.match(PRIORITY_HIGH_RE))) { priority = 'high'; title = title.replace(m[0], ' '); }
   const d = extractDue_(title);
-  return { title: capitalize_(d.text), due: d.due, project };
+  return { title: capitalize_(d.text), due: d.due, project, priority };
+}
+
+/** Danh sách dự án đã dùng (gần đây nhất trước) + TASK_PROJECTS (Script Property, ngăn cách bằng dấu phẩy). */
+function taskProjects_() {
+  const seen = {}, out = [];
+  const add = n => { n = String(n || '').trim(); const k = fold_(n); if (n && !seen[k]) { seen[k] = 1; out.push(n); } };
+  tasks_(true).reverse().forEach(t => add(t.project));
+  String(prop_('TASK_PROJECTS') || '').split(',').forEach(add);
+  return out.slice(0, 30);
+}
+
+/** Ghi 1 việc từ các trường đã tách. f: {title, project, due, priority}. */
+function createTask_(f) {
+  const title = capitalize_(String(f.title || '').replace(/\s+/g, ' ').trim()).slice(0, 200);
+  if (!title) return { error: 'Thiếu nội dung việc cần làm.' };
+  const due = /^\d{4}-\d{2}-\d{2}$/.test(String(f.due || '')) ? String(f.due) : '';
+  const project = String(f.project || '').replace(/^#/, '').replace(/\s+/g, ' ').trim().slice(0, 40);
+  const priority = priorityKey_(f.priority) || 'medium';
+  const id = tasks_(true).reduce((mx, t) => Math.max(mx, t.id), 0) + 1;
+  sheet_(SHEETS.TASKS).appendRow([id, title, TASK_STATUS.TODO, due, project, today_(), '', priorityOf_(priority).label]);
+  return { id, title, due, project, priority };
+}
+
+function taskReply_(t) {
+  return `📝 #${t.id} ${t.title}` + (t.due ? ` · hạn ${dueLabel_(t.due)}` : '') + (t.project ? ` · #${t.project}` : '') +
+    ` · ${priorityOf_(t.priority).icon} ${priorityOf_(t.priority).label}\nXong thì gõ /done ${t.id}`;
 }
 
 function addTask_(text, dueOverride) {
-  const { title, due, project } = parseTaskText_(text);
-  if (!title) return 'Cú pháp: /todo <việc cần làm> [hôm nay|mai|25/10] [#dự_án]';
-  const all = tasks_(true);
-  const id = all.reduce((mx, t) => Math.max(mx, t.id), 0) + 1;
-  const finalDue = dueOverride || due;
-  sheet_(SHEETS.TASKS).appendRow([id, title, TASK_STATUS.TODO, finalDue, project, today_(), '']);
-  return `📝 #${id} ${title}` + (finalDue ? ` · hạn ${prettyDate_(finalDue)}` : '') + (project ? ` · #${project}` : '') +
-    `\nXong thì gõ /done ${id}`;
+  const f = parseTaskText_(text);
+  if (!f.title) return 'Cú pháp: /todo <việc cần làm> [hôm nay|mai|25/10] [#dự_án] [gấp]';
+  if (dueOverride) f.due = dueOverride;
+  return taskReply_(createTask_(f));
+}
+
+/** Như addTask_, nhưng nếu có Gemini thì để AI điền những gì bạn chưa nói rõ (dự án, hạn, ưu tiên). Lỗi AI thì dùng kết quả quy tắc. */
+function addTaskSmart_(text, dueOverride) {
+  const f = parseTaskText_(text);
+  if (!f.title) return addTask_(text, dueOverride);
+  if (dueOverride) f.due = dueOverride;
+  if (aiEnabled_() && (!f.project || !f.due || !f.priority)) {
+    try {
+      const a = aiTask_({ text: String(text) });
+      if (a) { f.title = a.title || f.title; f.project = f.project || a.project; f.due = f.due || a.due; f.priority = f.priority || a.priority; }
+    } catch (e) { console.error(e); }
+  }
+  return taskReply_(createTask_(f));
 }
 
 function setTaskStatus_(id, status) {
@@ -507,12 +563,15 @@ function setTaskStatus_(id, status) {
 function taskLine_(t) {
   const today = today_();
   const flag = t.due && t.due < today ? '🔴' : t.due === today ? '🟠' : t.status === TASK_STATUS.DOING ? '⏳' : '▫️';
-  return `${flag} #${t.id} ${t.title}` + (t.due ? ` · ${prettyDate_(t.due)}` : '') + (t.project ? ` · #${t.project}` : '');
+  return `${flag} #${t.id} ${t.title}` + (t.due ? ` · ${prettyDate_(t.due)}` : '') + (t.project ? ` · #${t.project}` : '') +
+    (t.priority === 'high' ? ' · ❗gấp' : '');
 }
 
 function sortTasks_(list) {
-  const rank = { doing: 0, todo: 1, done: 2 };
-  return list.sort((a, b) => (rank[a.status] - rank[b.status]) || ((a.due || '9999') < (b.due || '9999') ? -1 : 1) || a.id - b.id);
+  const rank = { doing: 0, todo: 1, done: 2 }, pr = { high: 0, medium: 1, low: 2 };
+  const cmp = (x, y) => (x < y ? -1 : x > y ? 1 : 0);
+  return list.sort((a, b) => (rank[a.status] - rank[b.status]) || cmp(a.due || '9999', b.due || '9999') ||
+    (pr[a.priority] - pr[b.priority]) || a.id - b.id);
 }
 
 function taskReport_() {
@@ -1450,6 +1509,43 @@ function testGeminiEmail() {
   console.log('Model dùng được với key này (chép đúng vào GEMINI_EMAIL_MODEL):\n' + names.filter(n => /flash/.test(n)).join('\n'));
 }
 
+// ---------- Ghi việc bằng giọng nói / text ----------
+
+const TASK_MODEL_DEFAULT = 'gemini-flash-lite-latest'; // nhanh, nhẹ, free tier; đổi bằng Script Property GEMINI_TASK_MODEL
+
+function taskPrompt_(projects, hasAudio) {
+  const today = today_(), dow = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'][new Date(today + 'T12:00:00Z').getUTCDay()];
+  return `Bạn giúp người dùng ghi một công việc cần làm. Hôm nay là ${dow}, ${today} (giờ Việt Nam).
+${hasAudio ? 'Nghe đoạn ghi âm tiếng Việt và chép lại thành "transcript". ' : ''}Tách thành các trường:
+- title: việc cần làm, ngắn gọn, bắt đầu bằng động từ, giữ tiếng Việt, bỏ phần dự án/hạn/mức gấp ra khỏi title.
+- project: dự án hoặc khu vực/đối tượng của việc. Dự án đã có: ${JSON.stringify(projects)}. Nếu khớp một dự án đã có thì dùng đúng nguyên văn tên đó, nếu không thì đặt tên mới thật ngắn (1-3 từ) từ nội dung; không rõ thì null.
+- due: hạn chót dạng yyyy-MM-dd (đổi "mai", "thứ 6 tuần sau", "cuối tuần", "15/11"... ra ngày thật dựa vào hôm nay); không nhắc tới thì null.
+- priority: "high" nếu gấp/khẩn/quan trọng/sát hạn trong 1-2 ngày, "low" nếu không gấp/khi rảnh, còn lại "medium".
+Chỉ trả về một JSON: {${hasAudio ? '"transcript":"...",' : ''}"title":"...","project":"... hoặc null","due":"yyyy-MM-dd hoặc null","priority":"high|medium|low"}`;
+}
+
+/** Ép kết quả AI về đúng kiểu. Dự án gần giống tên đã có thì dùng lại tên cũ để khỏi đẻ ra biến thể. */
+function sanitizeTask_(raw, projects) {
+  raw = raw && typeof raw === 'object' ? raw : {};
+  let project = clip_(raw.project, 40).replace(/^#/, '');
+  if (/^(null|none|không rõ)$/i.test(project) || domainLike_(project)) project = '';
+  const hit = project && projects.find(p => fold_(p) === fold_(project));
+  if (hit) project = hit;
+  let due = isDay_(raw.due) ? String(raw.due) : '';
+  if (due && (due < today_() || due > addDays_(today_(), 730))) due = '';
+  return { transcript: clip_(raw.transcript, 600), title: capitalize_(clip_(raw.title, 200)), project, due, priority: priorityKey_(raw.priority) || 'medium' };
+}
+
+/** input: {text} hoặc {audio: base64, mime}. Trả về {transcript, title, project, due, priority} hoặc null nếu AI lỗi. 1 lần gọi duy nhất, kể cả khi có voice. */
+function aiTask_(input) {
+  const projects = taskProjects_(), hasAudio = !!input.audio;
+  const parts = [{ text: taskPrompt_(projects, hasAudio) }];
+  if (hasAudio) parts.push({ inlineData: { mimeType: input.mime || 'audio/webm', data: input.audio } });
+  else parts.push({ text: 'Nội dung: ' + JSON.stringify(String(input.text || '').slice(0, 1000)) });
+  const raw = gemini_(parts, true, { model: prop_('GEMINI_TASK_MODEL') || TASK_MODEL_DEFAULT });
+  return raw ? sanitizeTask_(raw, projects) : null;
+}
+
 
 // ===================== Telegram.gs =====================
 
@@ -1601,7 +1697,7 @@ function handleText_(text, source) {
 
   // 1. Công việc: "todo gửi báo cáo mai"
   const tp = text.match(TASK_PREFIX_RE);
-  if (tp) return addTask_(text.slice(tp[0].length));
+  if (tp) return addTaskSmart_(text.slice(tp[0].length));
 
   const past = extractPastDay_(text);
   const parsed = parseAmount_(past.text);
@@ -1624,7 +1720,7 @@ function handleText_(text, source) {
       const h = habits_().find(x => fold_(x.name) === fold_(r.habit));
       if (h) return logHabit_(h.name, text);
     }
-    if (r && r.intent === 'task' && r.task) return addTask_(r.task, r.due || '');
+    if (r && r.intent === 'task' && r.task) return addTaskSmart_(r.task, r.due || '');
     if (r && r.intent === 'lead' && r.lead && r.lead.name) {
       const res = createLead_({ name: r.lead.name, contact: r.lead.contact, value: r.lead.value,
         next: r.lead.next_action, due: r.lead.due });
@@ -1680,7 +1776,7 @@ function handleCommand_(text) {
       const h = matchHabit_(arg);
       return h ? logHabit_(h.name, '') : 'Không tìm thấy thói quen đó. Xem /habits';
     }
-    case 'todo': return addTask_(arg);
+    case 'todo': return addTaskSmart_(arg);
     case 'tasks': return taskReport_();
     case 'done': return setTaskStatus_(arg, TASK_STATUS.DONE);
     case 'doing': return setTaskStatus_(arg, TASK_STATUS.DOING);
@@ -1775,7 +1871,9 @@ function api_dashboard(key) {
       return { name: h.name, target: h.target, streak: st.streak, week: st.week,
         days: last7.map(d => ({ date: d, done: st.days.has(d) })) };
     }),
-    tasks: sortTasks_(tasks_(false)).map(x => ({ id: x.id, title: x.title, status: x.status, due: x.due, project: x.project })),
+    tasks: sortTasks_(tasks_(false)).map(x => ({ id: x.id, title: x.title, status: x.status, due: x.due, project: x.project, priority: x.priority })),
+    projects: taskProjects_(),
+    aiTasks: aiEnabled_(),
     leads: sortLeads_(leads_(false)).map(apiLead_),
     stages: LEAD_STAGES.map(s => ({ key: s.key, label: s.label })),
     staleDays: STALE_DAYS,
@@ -1828,6 +1926,37 @@ function api_addHabit(key, name, target) {
 function api_addTask(key, text) {
   auth_(key);
   return addTask_(text);
+}
+
+/** Tách câu thành {title, project, due, priority}. Có Gemini thì dùng AI, không thì (hoặc khi AI lỗi) dùng bộ tách theo quy tắc. */
+function api_parseTask(key, text) {
+  auth_(key);
+  text = String(text || '').trim();
+  if (!text) throw new Error('Chưa có nội dung.');
+  const rule = parseTaskText_(text);
+  let ai = null;
+  if (aiEnabled_()) { try { ai = aiTask_({ text }); } catch (e) { console.error(e); } }
+  const r = ai ? { title: ai.title || rule.title, project: rule.project || ai.project, due: rule.due || ai.due, priority: rule.priority || ai.priority }
+    : { title: rule.title, project: rule.project, due: rule.due, priority: rule.priority || 'medium' };
+  return Object.assign(r, { text, ai: !!ai, aiError: aiEnabled_() && !ai ? GEMINI_STATE.lastError : '' });
+}
+
+/** Ghi âm -> transcript + các trường, trong 1 lần gọi Gemini. */
+function api_parseTaskAudio(key, audioB64, mime) {
+  auth_(key);
+  if (!aiEnabled_()) throw new Error('Cần GEMINI_API_KEY để hiểu giọng nói. Bạn vẫn gõ text được.');
+  if (!audioB64 || String(audioB64).length > 8e6) throw new Error('Đoạn ghi âm trống hoặc quá dài, thử nói ngắn hơn.');
+  const a = aiTask_({ audio: String(audioB64), mime: String(mime || 'audio/webm').split(';')[0] });
+  if (!a) throw new Error('AI chưa nghe được: ' + GEMINI_STATE.lastError);
+  if (!a.title && !a.transcript) throw new Error('Không nghe rõ, thử nói lại nhé.');
+  return { text: a.transcript || a.title, title: a.title, project: a.project, due: a.due, priority: a.priority, ai: true, aiError: '' };
+}
+
+function api_saveTask(key, f) {
+  auth_(key);
+  const r = createTask_(f || {});
+  if (r.error) throw new Error(r.error);
+  return taskReply_(r);
 }
 
 function api_setTask(key, id, status) {
@@ -1913,6 +2042,9 @@ const API_FUNCTIONS = {
   toggleHabit: api_toggleHabit,
   addHabit: api_addHabit,
   addTask: api_addTask,
+  parseTask: api_parseTask,
+  parseTaskAudio: api_parseTaskAudio,
+  saveTask: api_saveTask,
   setTask: api_setTask,
   leadSave: api_leadSave,
   leadLog: api_leadLog,
@@ -2006,12 +2138,23 @@ function setup() {
   Object.keys(SHEETS).forEach(k => sheet_(SHEETS[k]));
   const blank = ss.getSheetByName('Sheet1') || ss.getSheetByName('Trang tính1');
   if (blank && ss.getSheets().length > 1) ss.deleteSheet(blank);
+  migrateHeaders_();
   sheet_(SHEETS.EXPENSES).getRange('C:C').setNumberFormat('#,##0');
   if (!prop_('WEBHOOK_SECRET')) setProp_('WEBHOOK_SECRET', Utilities.getUuid().replace(/-/g, ''));
   if (!prop_('WEB_KEY')) setProp_('WEB_KEY', Utilities.getUuid().replace(/-/g, '').slice(0, 16));
   console.log('Spreadsheet: ' + ss.getUrl());
   console.log('WEB_KEY: ' + prop_('WEB_KEY'));
 }
+
+/** Sheet cũ thiếu cột mới (vd. “Ưu tiên” của Tasks) thì thêm tiêu đề cột. Chạy trong setup(); gọi tay `migrateHeaders_` cũng được. */
+function migrateHeaders_() {
+  Object.keys(SHEETS).forEach(k => {
+    const def = SHEETS[k], sh = sheet_(def);
+    const cur = sh.getRange(1, 1, 1, def.headers.length).getValues()[0];
+    cur.forEach((v, i) => { if (!v) sh.getRange(1, i + 1).setValue(def.headers[i]).setFontWeight('bold'); });
+  });
+}
+function migrateSheets() { migrateHeaders_(); }
 
 function setBotCommands_() {
   tg_('setMyCommands', { commands: [

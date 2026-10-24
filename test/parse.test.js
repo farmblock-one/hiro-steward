@@ -35,7 +35,7 @@ assert.strictEqual(run(`fold_('Tập Thể Dục')`), 'tap the duc');
 
 const today = run('today_()');
 const task = t => run(`parseTaskText_(${JSON.stringify(t)})`);
-assert.deepStrictEqual({ ...task('gửi báo cáo mai #work') }, { title: 'Gửi báo cáo', due: run(`addDays_(today_(),1)`), project: 'work' });
+assert.deepStrictEqual({ ...task('gửi báo cáo mai #work') }, { title: 'Gửi báo cáo', due: run(`addDays_(today_(),1)`), project: 'work', priority: '' });
 assert.strictEqual(task('nộp thuế hôm nay').due, today);
 assert.strictEqual(task('họp team 25/12').due.slice(5), '12-25');
 assert.strictEqual(task('đặt vé tuần sau').due, run(`addDays_(weekStart_(today_()),7)`));

@@ -93,3 +93,40 @@ function testGeminiEmail() {
   const names = (JSON.parse(res.getContentText()).models || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent')).map(m => m.name.replace('models/', ''));
   console.log('Model dùng được với key này (chép đúng vào GEMINI_EMAIL_MODEL):\n' + names.filter(n => /flash/.test(n)).join('\n'));
 }
+
+// ---------- Ghi việc bằng giọng nói / text ----------
+
+const TASK_MODEL_DEFAULT = 'gemini-flash-lite-latest'; // nhanh, nhẹ, free tier; đổi bằng Script Property GEMINI_TASK_MODEL
+
+function taskPrompt_(projects, hasAudio) {
+  const today = today_(), dow = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'][new Date(today + 'T12:00:00Z').getUTCDay()];
+  return `Bạn giúp người dùng ghi một công việc cần làm. Hôm nay là ${dow}, ${today} (giờ Việt Nam).
+${hasAudio ? 'Nghe đoạn ghi âm tiếng Việt và chép lại thành "transcript". ' : ''}Tách thành các trường:
+- title: việc cần làm, ngắn gọn, bắt đầu bằng động từ, giữ tiếng Việt, bỏ phần dự án/hạn/mức gấp ra khỏi title.
+- project: dự án hoặc khu vực/đối tượng của việc. Dự án đã có: ${JSON.stringify(projects)}. Nếu khớp một dự án đã có thì dùng đúng nguyên văn tên đó, nếu không thì đặt tên mới thật ngắn (1-3 từ) từ nội dung; không rõ thì null.
+- due: hạn chót dạng yyyy-MM-dd (đổi "mai", "thứ 6 tuần sau", "cuối tuần", "15/11"... ra ngày thật dựa vào hôm nay); không nhắc tới thì null.
+- priority: "high" nếu gấp/khẩn/quan trọng/sát hạn trong 1-2 ngày, "low" nếu không gấp/khi rảnh, còn lại "medium".
+Chỉ trả về một JSON: {${hasAudio ? '"transcript":"...",' : ''}"title":"...","project":"... hoặc null","due":"yyyy-MM-dd hoặc null","priority":"high|medium|low"}`;
+}
+
+/** Ép kết quả AI về đúng kiểu. Dự án gần giống tên đã có thì dùng lại tên cũ để khỏi đẻ ra biến thể. */
+function sanitizeTask_(raw, projects) {
+  raw = raw && typeof raw === 'object' ? raw : {};
+  let project = clip_(raw.project, 40).replace(/^#/, '');
+  if (/^(null|none|không rõ)$/i.test(project) || domainLike_(project)) project = '';
+  const hit = project && projects.find(p => fold_(p) === fold_(project));
+  if (hit) project = hit;
+  let due = isDay_(raw.due) ? String(raw.due) : '';
+  if (due && (due < today_() || due > addDays_(today_(), 730))) due = '';
+  return { transcript: clip_(raw.transcript, 600), title: capitalize_(clip_(raw.title, 200)), project, due, priority: priorityKey_(raw.priority) || 'medium' };
+}
+
+/** input: {text} hoặc {audio: base64, mime}. Trả về {transcript, title, project, due, priority} hoặc null nếu AI lỗi. 1 lần gọi duy nhất, kể cả khi có voice. */
+function aiTask_(input) {
+  const projects = taskProjects_(), hasAudio = !!input.audio;
+  const parts = [{ text: taskPrompt_(projects, hasAudio) }];
+  if (hasAudio) parts.push({ inlineData: { mimeType: input.mime || 'audio/webm', data: input.audio } });
+  else parts.push({ text: 'Nội dung: ' + JSON.stringify(String(input.text || '').slice(0, 1000)) });
+  const raw = gemini_(parts, true, { model: prop_('GEMINI_TASK_MODEL') || TASK_MODEL_DEFAULT });
+  return raw ? sanitizeTask_(raw, projects) : null;
+}

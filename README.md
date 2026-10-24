@@ -36,6 +36,8 @@ iPhone ──► Telegram bot ──webhook──► Google Apps Script ──�
 - Hạn chót hiểu được: `hôm nay`, `mai`, `ngày mai`, `tuần sau`, `dd/mm`, `dd/mm/yyyy`. Dự án ghi bằng `#tên`
 - `/tasks` · `/doing 3` · `/done 3` · `/reopen 3`
 
+- **Ghi việc bằng giọng nói / text (tab Việc trên web app)**: bấm micro nói, vd “Gọi chị Mai chốt báo giá dự án ABC trước thứ 6, gấp”, hoặc gõ. AI tách ra **Dự án · Làm gì · Deadline · Ưu tiên**, hiện 4 ô màu để bạn kiểm tra, rồi bấm *Lưu luôn* hoặc *Xem lại* để sửa. Ghi âm và tách trường chỉ tốn **1 lần gọi Gemini** (model `gemini-flash-lite-latest`, free tier; đổi bằng `GEMINI_TASK_MODEL`). Không có AI thì vẫn tách theo quy tắc (`#dự_án`, `mai`, `gấp`/`không gấp`). Gợi ý dự án lấy từ các việc đã ghi (thêm sẵn bằng Script Property `TASK_PROJECTS`, cách nhau bằng dấu phẩy). Telegram `/todo …` và voice cũng được AI điền dự án/hạn/ưu tiên nếu bạn chưa nói. Sau khi cập nhật code, chạy `setup` một lần để thêm cột “Ưu tiên” vào tab Tasks cũ.
+
 **🐟 Lead tracking (cho Account Manager)**: mỗi lead có giai đoạn, giá trị deal, **next action + hạn** và lần liên hệ cuối. Bot nhắc bạn mỗi sáng 8h.
 - Thêm lead (ngăn cách bằng `|`, thứ tự tuỳ ý, thiếu mục nào cũng được):
   `/lead ABC Corp | 50tr | gửi báo giá | thứ 6 | @chị Mai` (cũng gõ được `lead ABC Corp | …` không cần dấu `/`)
@@ -205,7 +207,7 @@ src/
 docs/             web app (nguồn duy nhất) cho GitHub Pages, gọi API qua fetch
 dist/Code.gs      file sinh tự động: toàn bộ .gs gộp thành 1 để dán vào Apps Script
 scripts/build.js  sinh src/Index.html và dist/Code.gs
-test/             parse.test.js, leads.test.js, email.test.js, telegram.test.js, harness.js (Sheet giả)
+test/             parse.test.js, leads.test.js, email.test.js, telegram.test.js, tasks.test.js, harness.js (Sheet giả)
 ```
 
 Muốn thêm danh mục hoặc từ khoá thì sửa `CATEGORIES` trong `Config.gs`.
