@@ -61,8 +61,7 @@ const sh = env.sheets.Leads;
 sh.data[1][6] = day(-2);                                  // ABC quá hạn 2 ngày
 sh.data[2][6] = today;                                    // Beta hôm nay
 const brief = run('morningBrief_()');
-assert.ok(brief.includes('Lead quá hạn (1)') && brief.includes('quá hạn 2 ngày'), brief);
-assert.ok(brief.includes('Cần làm hôm nay (1)'), brief);
+assert.ok(brief.includes('Làm ngay (2/2 lead)') && brief.includes('trễ 2 ngày') && brief.includes('hạn hôm nay'), brief);
 sh.data[1][10] = day(-9);                                 // liên hệ cuối 9 ngày trước
 sh.data[1][6] = day(5);
 assert.ok(run('leadAttentionText_()').includes('Lâu chưa liên hệ (1)'));
@@ -106,4 +105,22 @@ assert.ok(al.ok && al.result.includes('Omega Ltd'), JSON.stringify(al));
 assert.strictEqual(api('addLeadText', 'Omega Ltd').ok, false, 'trùng tên bị chặn');
 assert.strictEqual(api('addLeadText', '   ').ok, false);
 assert.strictEqual(api('dashboard').result.leads.find(l => l.name === 'Omega Ltd').due, day(1));
+
+// --- “Làm ngay”: xếp hạng và rải lịch ---
+['Quá hạn A | 10tr | gọi | 25/12', 'Quá hạn B | gửi email | 25/12', 'Lớn mà xa | 5 tỷ | demo | 25/12', 'Chưa có next'].forEach(t => api('addLeadText', t));
+const L = env.sheets.Leads, rowOf = n => L.data.findIndex(r => r[1] === n);
+L.data[rowOf('Quá hạn A')][6] = day(-5); L.data[rowOf('Quá hạn B')][6] = day(-1);
+const rk = run('rankedLeads_()').map(l => l.name);
+assert.ok(rk.indexOf('Quá hạn A') < rk.indexOf('Lớn mà xa') && rk.indexOf('Chưa có next') < rk.indexOf('Lớn mà xa'), 'việc trễ/thiếu next action đứng trên deal lớn nhưng chưa tới hạn: ' + rk);
+assert.ok(rk.indexOf('Quá hạn A') < rk.indexOf('Quá hạn B'), 'trễ lâu hơn đứng trước');
+assert.strictEqual(run('rankedLeads_()').find(l => l.name === 'Quá hạn A').why, 'trễ 5 ngày');
+const sp = api('leadSpread', 1);
+assert.ok(sp.ok && sp.result.includes('Đã rải 2'), JSON.stringify(sp));
+const after = api('dashboard').result.leads;
+assert.ok(after.every(l => l.state !== 'overdue'), 'hết quá hạn');
+const dA = after.find(l => l.name === 'Quá hạn A').due, dB = after.find(l => l.name === 'Quá hạn B').due;
+assert.ok(dA !== dB && dA < dB, 'mỗi ngày 1 lead, lead trễ lâu hơn xếp sớm hơn');
+assert.ok(![0, 6].includes(new Date(dB + 'T12:00:00Z').getUTCDay()), 'không rải vào cuối tuần');
+assert.ok(api('leadSpread', 3).result.includes('Không có lead nào quá hạn'));
+assert.strictEqual(api('dashboard').result.focusSize, 10);
 console.log('All lead tests passed');

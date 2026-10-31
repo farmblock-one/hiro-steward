@@ -20,7 +20,7 @@ const SHEETS = {
   },
   TASKS: {
     name: 'Tasks',
-    headers: ['ID', 'Công việc', 'Trạng thái', 'Hạn', 'Dự án', 'Ngày tạo', 'Ngày xong'],
+    headers: ['ID', 'Công việc', 'Trạng thái', 'Hạn', 'Dự án', 'Ngày tạo', 'Ngày xong', 'Ưu tiên'],
   },
   LEADS: {
     name: 'Leads',
@@ -72,6 +72,13 @@ const CATEGORIES = {
   'Quà tặng': ['quà', 'biếu', 'mừng', 'đám cưới', 'sinh nhật', 'từ thiện'],
 };
 const DEFAULT_CATEGORY = 'Khác';
+
+// Ưu tiên công việc. Sheet lưu `label`.
+const TASK_PRIORITIES = [
+  { key: 'high', label: 'Cao', icon: '🔴' },
+  { key: 'medium', label: 'Vừa', icon: '🟡' },
+  { key: 'low', label: 'Thấp', icon: '🟢' },
+];
 
 const TASK_STATUS = { TODO: 'todo', DOING: 'doing', DONE: 'done' };
 

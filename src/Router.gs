@@ -17,7 +17,7 @@ function handleText_(text, source) {
 
   // 1. Công việc: "todo gửi báo cáo mai"
   const tp = text.match(TASK_PREFIX_RE);
-  if (tp) return addTask_(text.slice(tp[0].length));
+  if (tp) return addTaskSmart_(text.slice(tp[0].length));
 
   const past = extractPastDay_(text);
   const parsed = parseAmount_(past.text);
@@ -40,7 +40,7 @@ function handleText_(text, source) {
       const h = habits_().find(x => fold_(x.name) === fold_(r.habit));
       if (h) return logHabit_(h.name, text);
     }
-    if (r && r.intent === 'task' && r.task) return addTask_(r.task, r.due || '');
+    if (r && r.intent === 'task' && r.task) return addTaskSmart_(r.task, r.due || '');
     if (r && r.intent === 'lead' && r.lead && r.lead.name) {
       const res = createLead_({ name: r.lead.name, contact: r.lead.contact, value: r.lead.value,
         next: r.lead.next_action, due: r.lead.due });
@@ -96,7 +96,7 @@ function handleCommand_(text) {
       const h = matchHabit_(arg);
       return h ? logHabit_(h.name, '') : 'Không tìm thấy thói quen đó. Xem /habits';
     }
-    case 'todo': return addTask_(arg);
+    case 'todo': return addTaskSmart_(arg);
     case 'tasks': return taskReport_();
     case 'done': return setTaskStatus_(arg, TASK_STATUS.DONE);
     case 'doing': return setTaskStatus_(arg, TASK_STATUS.DOING);
@@ -131,7 +131,7 @@ function dailyDigest_() {
   const pending = habits_().filter(h => !habitStats_(h.name, logs).doneToday).map(h => h.name);
   const t = today_();
   const urgent = sortTasks_(tasks_(false).filter(x => x.due && x.due <= t));
-  const leadsTxt = leadAttentionText_();
+  const leadsTxt = leadFocusText_(5);
   return [
     `📅 ${prettyDate_(t)}`,
     `💰 Hôm nay đã chi ${money_(s.today)} · tháng này ${money_(s.month)}`,
@@ -147,7 +147,7 @@ function morningBrief_() {
   const t = today_();
   const exp = expenses_(), y = addDays_(t, -1);
   const yesterday = exp.filter(e => e.date === y).reduce((a, e) => a + e.amount, 0);
-  const leadsTxt = leadAttentionText_();
+  const leadsTxt = leadFocusText_(FOCUS_SIZE);
   const tasks = sortTasks_(tasks_(false).filter(x => x.due && x.due <= t));
   const parts = [`🐱☀️ Meo! Chào buổi sáng ${prettyDate_(t)}`];
   parts.push(leadsTxt || '🐟 Không có lead nào cần xử lý gấp hôm nay.');
@@ -155,6 +155,7 @@ function morningBrief_() {
   if (mailTxt) parts.push(mailTxt);
   if (tasks.length) parts.push(`🎯 Việc đến hạn:\n${tasks.map(taskLine_).join('\n')}`);
   parts.push(`💰 Hôm qua đã chi ${money_(yesterday)}`);
-  parts.push('Ghi nhanh sau mỗi cuộc gọi: /log <id> <ghi chú> | <việc tiếp theo>');
+  const app = webAppLink_();
+  parts.push(app ? '👉 Xử lý trên web app: ' + app : 'Ghi nhanh sau mỗi cuộc gọi: /log <id> <ghi chú> | <việc tiếp theo>');
   return parts.join('\n\n');
 }

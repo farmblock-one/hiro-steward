@@ -237,8 +237,9 @@ function sanitizeInsight_(raw, t, leads) {
   else {
     if (due && (due > addDays_(today, 180))) due = '';
     if (due && due < today) due = today;
-    if (!due) due = workday_(wait === 'me' ? today : wait === 'them' ? addDays_(t.lastDate || today, 3) : addDays_(today, 7));
-    else due = workday_(due);
+    if (!due) due = wait === 'me' ? today : wait === 'them' ? addDays_(t.lastDate || today, 3) : addDays_(today, 7);
+    if (due < today) due = today; // hạn mặc định tính từ email cũ có thể đã qua: đừng tạo lead quá hạn ngay khi nhập
+    due = workday_(due);
   }
   const email = clip_(raw.contact_email, 120).toLowerCase();
   const val = Number(raw.value_vnd);
@@ -471,7 +472,8 @@ function emailAttentionText_() {
   const a = emailAttention_();
   if (!a) return '';
   const out = [];
-  const waiting = a.waitingMe.filter(r => r.wait === 'me');
+  // Luồng đã nhập thành lead thì hiện trong “Làm ngay” rồi, ở đây chỉ còn những gì chưa thành lead.
+  const waiting = a.waitingMe.filter(r => r.wait === 'me' && r.status === EMAIL_STATUS.SUGGESTED);
   if (waiting.length) out.push(`📧 Khách đang chờ bạn trả lời (${waiting.length})\n` + waiting.slice(0, 5).map(r =>
     `• ${emailTitle_(r)}: ${r.next || r.summary || r.subject} · chờ ${emailWaitDays_(r)} ngày`).join('\n'));
   if (a.suggestions.length) out.push(`📧 ${a.suggestions.length} gợi ý lead/follow-up từ email chưa xử lý, xem bằng /emails`);
@@ -511,6 +513,17 @@ function acceptEmailInsight_(idText) {
   return msg;
 }
 
+const EMAIL_OLD_DAYS = 30;
+
+/** Bỏ qua mọi gợi ý chưa xử lý có email cuối cũ hơn `days` ngày (mặc định 30). */
+function dismissOldEmail_(days) {
+  days = Number(days) || EMAIL_OLD_DAYS;
+  const sh = sheet_(SHEETS.EMAIL);
+  const old = emailRows_().filter(r => r.status === EMAIL_STATUS.SUGGESTED && emailWaitDays_(r) > days);
+  old.forEach(r => sh.getRange(r.row, EC.STATUS + 1).setValue(EMAIL_STATUS.DISMISSED));
+  return `🙈 Đã bỏ qua ${old.length} gợi ý cũ hơn ${days} ngày.`;
+}
+
 function dismissEmailInsight_(idText) {
   const id = Number(String(idText || '').replace(/^#/, ''));
   const it = emailRows_().find(r => r.id === id);
@@ -527,7 +540,7 @@ function emailDashboard_() {
     const m = r.matchLeadId && leads.find(l => l.id === r.matchLeadId);
     return { id: r.id, title: emailTitle_(r), contact: r.contact, summary: r.summary, stage: r.stage, stageLabel: stageByKey_(r.stage).label,
       value: r.value, next: r.next, due: r.due, reason: r.reason, wait: r.wait, prio: r.prio, conf: r.conf, waitDays: emailWaitDays_(r),
-      link: r.link, matchLeadId: r.matchLeadId || '', matchLeadName: m ? m.name : '' };
+      link: r.link, matchLeadId: r.matchLeadId || '', matchLeadName: m ? m.name : '', old: emailWaitDays_(r) > EMAIL_OLD_DAYS };
   });
   return { enabled: true, items, lastScan: prop_('EMAIL_LAST_SCAN') || '', note: prop_('EMAIL_LAST_NOTE') || '' };
 }

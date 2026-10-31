@@ -63,12 +63,23 @@ function setup() {
   Object.keys(SHEETS).forEach(k => sheet_(SHEETS[k]));
   const blank = ss.getSheetByName('Sheet1') || ss.getSheetByName('Trang tính1');
   if (blank && ss.getSheets().length > 1) ss.deleteSheet(blank);
+  migrateHeaders_();
   sheet_(SHEETS.EXPENSES).getRange('C:C').setNumberFormat('#,##0');
   if (!prop_('WEBHOOK_SECRET')) setProp_('WEBHOOK_SECRET', Utilities.getUuid().replace(/-/g, ''));
   if (!prop_('WEB_KEY')) setProp_('WEB_KEY', Utilities.getUuid().replace(/-/g, '').slice(0, 16));
   console.log('Spreadsheet: ' + ss.getUrl());
   console.log('WEB_KEY: ' + prop_('WEB_KEY'));
 }
+
+/** Sheet cũ thiếu cột mới (vd. “Ưu tiên” của Tasks) thì thêm tiêu đề cột. Chạy trong setup(); gọi tay `migrateHeaders_` cũng được. */
+function migrateHeaders_() {
+  Object.keys(SHEETS).forEach(k => {
+    const def = SHEETS[k], sh = sheet_(def);
+    const cur = sh.getRange(1, 1, 1, def.headers.length).getValues()[0];
+    cur.forEach((v, i) => { if (!v) sh.getRange(1, i + 1).setValue(def.headers[i]).setFontWeight('bold'); });
+  });
+}
+function migrateSheets() { migrateHeaders_(); }
 
 function setBotCommands_() {
   tg_('setMyCommands', { commands: [
