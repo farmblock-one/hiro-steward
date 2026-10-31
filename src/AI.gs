@@ -130,3 +130,10 @@ function aiTask_(input) {
   const raw = gemini_(parts, true, { model: prop_('GEMINI_TASK_MODEL') || TASK_MODEL_DEFAULT });
   return raw ? sanitizeTask_(raw, projects) : null;
 }
+
+/** Chạy tay trong trình soạn thảo: thử AI ghi việc với 1 câu mẫu và in kết quả (không ghi gì vào Sheet). */
+function testTaskAI() {
+  console.log(`Key: ${prop_('GEMINI_API_KEY') ? 'GEMINI_API_KEY đã đặt' : '❌ CHƯA ĐẶT GEMINI_API_KEY'} · model: ${prop_('GEMINI_TASK_MODEL') || TASK_MODEL_DEFAULT}`);
+  const r = aiTask_({ text: 'Gọi chị Mai chốt báo giá dự án ABC trước thứ 6, gấp' });
+  console.log(r ? '✅ AI tách được: ' + JSON.stringify(r) : '❌ ' + GEMINI_STATE.lastError + '\nNếu lỗi 404 model: đặt GEMINI_TASK_MODEL = gemini-flash-latest');
+}

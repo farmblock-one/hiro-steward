@@ -39,6 +39,7 @@ iPhone ──► Telegram bot ──webhook──► Google Apps Script ──�
 - **Ghi việc bằng giọng nói / text (tab Việc trên web app)**: bấm micro nói, vd “Gọi chị Mai chốt báo giá dự án ABC trước thứ 6, gấp”, hoặc gõ. AI tách ra **Dự án · Làm gì · Deadline · Ưu tiên**, hiện 4 ô màu để bạn kiểm tra, rồi bấm *Lưu luôn* hoặc *Xem lại* để sửa. Ghi âm và tách trường chỉ tốn **1 lần gọi Gemini** (model `gemini-flash-lite-latest`, free tier; đổi bằng `GEMINI_TASK_MODEL`). Không có AI thì vẫn tách theo quy tắc (`#dự_án`, `mai`, `gấp`/`không gấp`). Gợi ý dự án lấy từ các việc đã ghi (thêm sẵn bằng Script Property `TASK_PROJECTS`, cách nhau bằng dấu phẩy). Telegram `/todo …` và voice cũng được AI điền dự án/hạn/ưu tiên nếu bạn chưa nói. Sau khi cập nhật code, chạy `setup` một lần để thêm cột “Ưu tiên” vào tab Tasks cũ.
 
 **🐟 Lead tracking (cho Account Manager)**: mỗi lead có giai đoạn, giá trị deal, **next action + hạn** và lần liên hệ cuối. Bot nhắc bạn mỗi sáng 8h.
+- **Web app là nơi xử lý chính** (Telegram để ghi nhanh). Tab Lead mở ở **🎯 Làm ngay**: tối đa 10 lead cần làm trước nhất, mỗi lead 1 dòng, bấm vào để xem chi tiết, ghi liên hệ hoặc dời hạn. Thứ tự ưu tiên: **khách đang chờ bạn trả lời** (theo email) > trễ hạn (càng lâu càng cao) > hạn hôm nay > chưa có next action, cộng thêm giai đoạn gần chốt và giá trị deal. Ngoài ra có **Danh sách** (tìm kiếm, nhóm thu gọn), **Phễu** (cột theo giai đoạn) và **7 ngày** (ngày nào dày lịch). Nhiều lead trễ hạn thì dùng **🧹 Dọn từng cái** (mỗi lead 1 chạm) hoặc **Rải lịch 3/ngày**. Trên máy tính, tab Lead chia 2 cột.
 - Thêm lead (ngăn cách bằng `|`, thứ tự tuỳ ý, thiếu mục nào cũng được):
   `/lead ABC Corp | 50tr | gửi báo giá | thứ 6 | @chị Mai` (cũng gõ được `lead ABC Corp | …` không cần dấu `/`)
 - Sau mỗi cuộc gọi/họp: `/log abc đã gọi, khách quan tâm | gửi hợp đồng thứ 2 tuần sau`. Bot ghi lịch sử, cập nhật “liên hệ cuối” và đặt luôn next action mới
@@ -95,6 +96,27 @@ Mở bot và nhắn bất kỳ tin nào. Bot sẽ trả lời *Chat ID* của b�
 Nhắn `/app` cho bot → mở link bằng Safari → nút Share → **Add to Home Screen**.
 
 > ⚠️ Mỗi lần sửa code, vào **Deploy → Manage deployments → Edit → Version: New version** để URL `/exec` cũ nhận code mới. Nếu bạn tạo *deployment mới* thì URL sẽ đổi, và phải cập nhật `WEB_APP_URL` rồi chạy lại `setWebhook`.
+
+## Cập nhật lên bản mới (ghi việc bằng giọng nói + tab Lead mới)
+
+Làm một lần, theo đúng thứ tự. Mất khoảng 5 phút.
+
+**A. Đưa code lên GitHub `main`** (GitHub Pages lấy giao diện từ `main` / `docs`): merge nhánh có thay đổi vào `main` (qua Pull Request). Khoảng 1 phút sau, trang `https://<user>.github.io/hiro-steward/` có giao diện mới. Mở lại trang, nếu vẫn là bản cũ thì kéo xuống để tải lại (trên iPhone: đóng hẳn app ở màn hình chính rồi mở lại).
+
+**B. Cập nhật Apps Script**
+1. Mở project Apps Script. Mở file code chính (`Mã.gs` / `Code.gs`), **xoá hết nội dung**, dán toàn bộ **`dist/Code.gs`** mới vào, bấm 💾 Lưu.
+2. Nếu bạn còn dùng link `script.google.com/...exec?key=` (không qua GitHub Pages): mở file `Index.html`, xoá hết, dán **`src/Index.html`** mới vào, Lưu.
+3. `appsscript.json` không đổi, không cần đụng tới.
+4. Chọn hàm **`setup`** → **Chạy**. Hàm này an toàn để chạy lại: không tạo Sheet mới, chỉ thêm cột “Ưu tiên” vào tab `Tasks`.
+5. (Tuỳ chọn) Chọn hàm **`testTaskAI`** → **Chạy**. Nhật ký phải in `✅ AI tách được: {...}`. Nếu báo lỗi 404 model, thêm Script Property `GEMINI_TASK_MODEL` = `gemini-flash-latest`.
+6. **Triển khai → Quản lý các bản triển khai → ✏️ (Chỉnh sửa) → Phiên bản: Phiên bản mới → Triển khai.** URL `/exec` giữ nguyên, không cần chạy lại `setWebhook`.
+
+**C. Thử**
+- Web app → tab **Việc** → bấm micro 🎤, cho phép dùng micro, nói “Gửi báo giá cho ABC trước thứ 6, gấp”, bấm micro lần nữa để dừng. 4 ô Dự án / Làm gì / Deadline / Ưu tiên sẽ tự điền. Micro cần mở qua link GitHub Pages (https); link `script.google.com` chạy trong khung nhúng nên trình duyệt có thể chặn micro.
+- Web app → tab **Lead** → mặc định là “🎯 Làm ngay” (10 lead cần làm trước nhất). Có “🧹 Dọn từng cái” và “Rải lịch 3/ngày” khi nhiều lead trễ hạn.
+- Telegram: `/morning` xem bản tin sáng dạng gọn.
+
+Script Properties tuỳ chọn: `GEMINI_TASK_MODEL` (mặc định `gemini-flash-lite-latest`), `TASK_PROJECTS` (danh sách dự án gợi ý sẵn, cách nhau bằng dấu phẩy).
 
 ## Email: AI đọc email (chỉ đọc) để gợi ý lead và lịch follow-up
 

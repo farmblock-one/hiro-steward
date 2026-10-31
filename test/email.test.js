@@ -155,7 +155,10 @@ geminiReply = p => Object.assign({}, base, { existing_lead: 'abc corp', stage: '
 threads.th1.historyId = '102'; threads.th1.messages.push(msg('m8', 'Lan <lan@abccorp.vn>', ME, 'Re: Xin báo giá gói B', ago(0), 'Giá hơi cao, anh gọi em nhé.'));
 run('emailScan_()');
 assert.strictEqual(run('emailRows_()').find(r => r.id === idAbc).status, 'đã nhập', 'đã nhập thì không tự mở lại');
-assert.ok(run('emailAttentionText_()').includes('Khách đang chờ bạn trả lời'));
+assert.ok(!run('emailAttentionText_()').includes('ABC'), 'đã nhập thành lead thì không lặp lại ở mục email');
+const focus = run('rankedLeads_()')[0];
+assert.strictEqual(focus.id, lead.id); assert.ok(focus.waitDays === 0 && focus.score >= 100 && focus.why === 'khách đang chờ', 'khách chờ bạn đứng đầu “Làm ngay”');
+assert.ok(run('leadFocusText_(10)').includes('📧'));
 const idXyz = th2.id; env.sheets.EmailLeads.data[run('emailRows_()').find(r => r.id === idXyz).row - 1][17] = 'đề xuất';
 out = cmd(`/skipmail ${idXyz}`); assert.ok(out.includes('Đã bỏ qua'), out);
 assert.strictEqual(run('emailRows_()').find(r => r.id === idXyz).status, 'bỏ qua');
@@ -290,4 +293,16 @@ assert.ok(!manifest.oauthScopes.some(s => /gmail\.(send|modify|compose|insert|la
 const src = require('fs').readFileSync(require('path').join(__dirname, '../src/Email.gs'), 'utf8');
 assert.ok(!/GmailApp|method:\s*'(post|put|patch|delete)'/i.test(src), 'Email.gs không dùng GmailApp hay phương thức ghi');
 assert.strictEqual((src.match(/UrlFetchApp\.fetch/g) || []).length, 1, 'chỉ có một cổng gọi mạng, nằm trong gmailGet_');
+
+// --- 9. Dọn gợi ý cũ ---
+{
+  const E = env.sheets.EmailLeads.data;
+  E.push([900, 'old1', 's', 'Cũ Ltd', '', '', 'x', 'Mới', '', 'Trả lời', today, '', 'me', 'medium', 0.9, day(-45) + ' 10:00', 'l', 'đề xuất', '', '', '1', '']);
+  E.push([901, 'new1', 's', 'Mới Ltd', '', '', 'x', 'Mới', '', 'Trả lời', today, '', 'me', 'medium', 0.9, day(-2) + ' 10:00', 'l', 'đề xuất', '', '', '1', '']);
+  const dashE = run('emailDashboard_()').items;
+  assert.ok(dashE.find(i => i.id === 900).old && !dashE.find(i => i.id === 901).old);
+  assert.ok(run('dismissOldEmail_(30)').includes('1 gợi ý'));
+  assert.strictEqual(run('emailRows_()').find(r => r.id === 900).status, 'bỏ qua');
+  assert.strictEqual(run('emailRows_()').find(r => r.id === 901).status, 'đề xuất');
+}
 console.log('All email tests passed');

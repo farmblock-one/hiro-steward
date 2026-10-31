@@ -851,6 +851,87 @@ function pipelineReport_() {
     `\n🟡 Lead nguội (≥${STALE_DAYS} ngày): ${open.filter(l => l.stale).length}`;
 }
 
+// ---------- Ưu tiên: “Làm ngay” ----------
+// Triết lý cho Account Manager: khách đang chờ bạn là nặng nhất (chậm trả lời = mất deal),
+// sau đó tới việc đã hứa mà trễ hạn, deal càng gần chốt và càng lớn càng được đẩy lên.
+
+const FOCUS_SIZE = 10;
+const STAGE_WEIGHT = { new: 0, contacted: 4, meeting: 8, proposal: 12, negotiating: 16 };
+
+/**
+ * Lead nào khách đang chờ bạn trả lời (theo email): leadId -> số ngày khách đã chờ.
+ * Bỏ qua nếu bạn đã ghi liên hệ với lead SAU email cuối của khách (đã xử lý rồi).
+ */
+function leadsWaitingMe_(leads) {
+  const out = {};
+  if (!emailEnabled_()) return out;
+  const byId = {}; leads.forEach(l => { byId[l.id] = l; });
+  emailRows_().forEach(r => {
+    if (r.wait !== 'me' || (r.status !== EMAIL_STATUS.IMPORTED && r.status !== EMAIL_STATUS.SUGGESTED)) return;
+    const l = byId[r.leadId || r.matchLeadId]; if (!l || l.closed) return;
+    const mailDay = r.lastAt.slice(0, 10);
+    if (mailDay && l.lastContact > mailDay) return;
+    out[l.id] = Math.max(out[l.id] || 0, emailWaitDays_(r));
+  });
+  return out;
+}
+
+/** Điểm ưu tiên (càng cao càng cần làm trước) + lý do ngắn để hiện trên thẻ. */
+function leadPriority_(l, waitDays) {
+  const t = today_();
+  let score = 0, why = '';
+  if (waitDays != null) { score += 100 + Math.min(waitDays, 14) * 2; why = waitDays ? `khách chờ ${waitDays} ngày` : 'khách đang chờ'; }
+  if (l.state === 'overdue') { const d = daysBetween_(l.due, t); score += 40 + Math.min(d, 10) * 1.5; why = why || `trễ ${d} ngày`; }
+  else if (l.state === 'today') { score += 45; why = why || 'hạn hôm nay'; }
+  else if (l.state === 'none') { score += 30; why = why || 'chưa có next action'; }
+  else if (l.due) { const d = daysBetween_(t, l.due); score += d <= 2 ? 20 : d <= 7 ? 5 : 0; }
+  score += STAGE_WEIGHT[l.stage] || 0;
+  if (l.value) score += Math.min(15, Math.log10(l.value / 1e6 + 1) * 8);
+  if (l.stale) { score += 8; why = why || `${l.daysSince} ngày chưa liên hệ`; }
+  return { score: Math.round(score), why };
+}
+
+/** Lead đang mở, đã gắn điểm, xếp từ cần làm nhất. */
+function rankedLeads_() {
+  const open = leads_(false), wait = leadsWaitingMe_(open);
+  return open.map(l => Object.assign(l, { waitDays: wait[l.id] != null ? wait[l.id] : null }, leadPriority_(l, wait[l.id])))
+    .sort((a, b) => b.score - a.score || (a.due || '9999').localeCompare(b.due || '9999') || b.value - a.value);
+}
+
+/** “Làm ngay” cho Telegram: tối đa n lead, mỗi lead 2 dòng ngắn, phần còn lại chỉ đếm. */
+function leadFocusText_(n) {
+  const all = rankedLeads_();
+  if (!all.length) return '';
+  const urgent = all.filter(l => l.waitDays != null || l.state === 'overdue' || l.state === 'today' || l.state === 'none');
+  const top = urgent.slice(0, n || FOCUS_SIZE);
+  if (!top.length) return `🐟 ${all.length} lead đang mở, không có gì gấp hôm nay.`;
+  const cut = (s, k) => (s.length > k ? s.slice(0, k - 1).trim() + '…' : s);
+  const lines = top.map((l, i) => `${i + 1}. ${l.waitDays != null ? '📧' : l.state === 'overdue' ? '🔴' : l.state === 'today' ? '🟠' : '⚪'} ${l.name} · ${l.why}\n    ➜ ${cut(l.next || 'Đặt next action', 60)}`);
+  const rest = urgent.length - top.length;
+  return `🎯 Làm ngay (${top.length}/${all.length} lead)\n` + lines.join('\n') + (rest > 0 ? `\n… còn ${rest} lead cần xử lý, xem trên web app` : '');
+}
+
+/**
+ * Rải các lead quá hạn sang những ngày làm việc tới, mỗi ngày tối đa perDay lead (tính cả lead đã có hạn ngày đó).
+ * Lead điểm cao nhất được xếp sớm nhất. Không đụng tới lead chưa quá hạn.
+ */
+function spreadOverdue_(perDay) {
+  perDay = Math.max(1, Math.min(10, Number(perDay) || 3));
+  const ranked = rankedLeads_(), t = today_();
+  const overdue = ranked.filter(l => l.state === 'overdue');
+  if (!overdue.length) return 'Không có lead nào quá hạn 🎉';
+  const load = {}; ranked.forEach(l => { if (l.due && l.due >= t) load[l.due] = (load[l.due] || 0) + 1; });
+  let day = workday_(t);
+  const plan = {};
+  overdue.forEach(l => {
+    while ((load[day] || 0) >= perDay) day = workday_(addDays_(day, 1));
+    load[day] = (load[day] || 0) + 1;
+    setLeadCells_(l, { [LC.DUE]: day, [LC.NEXT]: l.next || 'Follow-up' });
+    plan[day] = (plan[day] || 0) + 1;
+  });
+  return `🗓 Đã rải ${overdue.length} lead quá hạn: ` + Object.keys(plan).sort().map(d => `${dueLabel_(d)} ${plan[d]}`).join(' · ');
+}
+
 /** Gom các lead cần chú ý để nhắc. */
 function leadAttention_() {
   const open = leads_(false);
@@ -1115,8 +1196,9 @@ function sanitizeInsight_(raw, t, leads) {
   else {
     if (due && (due > addDays_(today, 180))) due = '';
     if (due && due < today) due = today;
-    if (!due) due = workday_(wait === 'me' ? today : wait === 'them' ? addDays_(t.lastDate || today, 3) : addDays_(today, 7));
-    else due = workday_(due);
+    if (!due) due = wait === 'me' ? today : wait === 'them' ? addDays_(t.lastDate || today, 3) : addDays_(today, 7);
+    if (due < today) due = today; // hạn mặc định tính từ email cũ có thể đã qua: đừng tạo lead quá hạn ngay khi nhập
+    due = workday_(due);
   }
   const email = clip_(raw.contact_email, 120).toLowerCase();
   const val = Number(raw.value_vnd);
@@ -1349,7 +1431,8 @@ function emailAttentionText_() {
   const a = emailAttention_();
   if (!a) return '';
   const out = [];
-  const waiting = a.waitingMe.filter(r => r.wait === 'me');
+  // Luồng đã nhập thành lead thì hiện trong “Làm ngay” rồi, ở đây chỉ còn những gì chưa thành lead.
+  const waiting = a.waitingMe.filter(r => r.wait === 'me' && r.status === EMAIL_STATUS.SUGGESTED);
   if (waiting.length) out.push(`📧 Khách đang chờ bạn trả lời (${waiting.length})\n` + waiting.slice(0, 5).map(r =>
     `• ${emailTitle_(r)}: ${r.next || r.summary || r.subject} · chờ ${emailWaitDays_(r)} ngày`).join('\n'));
   if (a.suggestions.length) out.push(`📧 ${a.suggestions.length} gợi ý lead/follow-up từ email chưa xử lý, xem bằng /emails`);
@@ -1389,6 +1472,17 @@ function acceptEmailInsight_(idText) {
   return msg;
 }
 
+const EMAIL_OLD_DAYS = 30;
+
+/** Bỏ qua mọi gợi ý chưa xử lý có email cuối cũ hơn `days` ngày (mặc định 30). */
+function dismissOldEmail_(days) {
+  days = Number(days) || EMAIL_OLD_DAYS;
+  const sh = sheet_(SHEETS.EMAIL);
+  const old = emailRows_().filter(r => r.status === EMAIL_STATUS.SUGGESTED && emailWaitDays_(r) > days);
+  old.forEach(r => sh.getRange(r.row, EC.STATUS + 1).setValue(EMAIL_STATUS.DISMISSED));
+  return `🙈 Đã bỏ qua ${old.length} gợi ý cũ hơn ${days} ngày.`;
+}
+
 function dismissEmailInsight_(idText) {
   const id = Number(String(idText || '').replace(/^#/, ''));
   const it = emailRows_().find(r => r.id === id);
@@ -1405,7 +1499,7 @@ function emailDashboard_() {
     const m = r.matchLeadId && leads.find(l => l.id === r.matchLeadId);
     return { id: r.id, title: emailTitle_(r), contact: r.contact, summary: r.summary, stage: r.stage, stageLabel: stageByKey_(r.stage).label,
       value: r.value, next: r.next, due: r.due, reason: r.reason, wait: r.wait, prio: r.prio, conf: r.conf, waitDays: emailWaitDays_(r),
-      link: r.link, matchLeadId: r.matchLeadId || '', matchLeadName: m ? m.name : '' };
+      link: r.link, matchLeadId: r.matchLeadId || '', matchLeadName: m ? m.name : '', old: emailWaitDays_(r) > EMAIL_OLD_DAYS };
   });
   return { enabled: true, items, lastScan: prop_('EMAIL_LAST_SCAN') || '', note: prop_('EMAIL_LAST_NOTE') || '' };
 }
@@ -1544,6 +1638,13 @@ function aiTask_(input) {
   else parts.push({ text: 'Nội dung: ' + JSON.stringify(String(input.text || '').slice(0, 1000)) });
   const raw = gemini_(parts, true, { model: prop_('GEMINI_TASK_MODEL') || TASK_MODEL_DEFAULT });
   return raw ? sanitizeTask_(raw, projects) : null;
+}
+
+/** Chạy tay trong trình soạn thảo: thử AI ghi việc với 1 câu mẫu và in kết quả (không ghi gì vào Sheet). */
+function testTaskAI() {
+  console.log(`Key: ${prop_('GEMINI_API_KEY') ? 'GEMINI_API_KEY đã đặt' : '❌ CHƯA ĐẶT GEMINI_API_KEY'} · model: ${prop_('GEMINI_TASK_MODEL') || TASK_MODEL_DEFAULT}`);
+  const r = aiTask_({ text: 'Gọi chị Mai chốt báo giá dự án ABC trước thứ 6, gấp' });
+  console.log(r ? '✅ AI tách được: ' + JSON.stringify(r) : '❌ ' + GEMINI_STATE.lastError + '\nNếu lỗi 404 model: đặt GEMINI_TASK_MODEL = gemini-flash-latest');
 }
 
 
@@ -1811,7 +1912,7 @@ function dailyDigest_() {
   const pending = habits_().filter(h => !habitStats_(h.name, logs).doneToday).map(h => h.name);
   const t = today_();
   const urgent = sortTasks_(tasks_(false).filter(x => x.due && x.due <= t));
-  const leadsTxt = leadAttentionText_();
+  const leadsTxt = leadFocusText_(5);
   return [
     `📅 ${prettyDate_(t)}`,
     `💰 Hôm nay đã chi ${money_(s.today)} · tháng này ${money_(s.month)}`,
@@ -1827,7 +1928,7 @@ function morningBrief_() {
   const t = today_();
   const exp = expenses_(), y = addDays_(t, -1);
   const yesterday = exp.filter(e => e.date === y).reduce((a, e) => a + e.amount, 0);
-  const leadsTxt = leadAttentionText_();
+  const leadsTxt = leadFocusText_(FOCUS_SIZE);
   const tasks = sortTasks_(tasks_(false).filter(x => x.due && x.due <= t));
   const parts = [`🐱☀️ Meo! Chào buổi sáng ${prettyDate_(t)}`];
   parts.push(leadsTxt || '🐟 Không có lead nào cần xử lý gấp hôm nay.');
@@ -1835,7 +1936,8 @@ function morningBrief_() {
   if (mailTxt) parts.push(mailTxt);
   if (tasks.length) parts.push(`🎯 Việc đến hạn:\n${tasks.map(taskLine_).join('\n')}`);
   parts.push(`💰 Hôm qua đã chi ${money_(yesterday)}`);
-  parts.push('Ghi nhanh sau mỗi cuộc gọi: /log <id> <ghi chú> | <việc tiếp theo>');
+  const app = webAppLink_();
+  parts.push(app ? '👉 Xử lý trên web app: ' + app : 'Ghi nhanh sau mỗi cuộc gọi: /log <id> <ghi chú> | <việc tiếp theo>');
   return parts.join('\n\n');
 }
 
@@ -1874,7 +1976,8 @@ function api_dashboard(key) {
     tasks: sortTasks_(tasks_(false)).map(x => ({ id: x.id, title: x.title, status: x.status, due: x.due, project: x.project, priority: x.priority })),
     projects: taskProjects_(),
     aiTasks: aiEnabled_(),
-    leads: sortLeads_(leads_(false)).map(apiLead_),
+    leads: rankedLeads_().map(apiLead_),
+    focusSize: FOCUS_SIZE,
     stages: LEAD_STAGES.map(s => ({ key: s.key, label: s.label })),
     staleDays: STALE_DAYS,
     email: emailDashboard_(),
@@ -1884,7 +1987,7 @@ function api_dashboard(key) {
 function apiLead_(l) {
   return { id: l.id, name: l.name, contact: l.contact, stage: l.stage, stageLabel: l.stageLabel, value: l.value,
     next: l.next, due: l.due, source: l.source, note: l.note, lastContact: l.lastContact,
-    daysSince: l.daysSince, state: l.state, stale: l.stale };
+    daysSince: l.daysSince, state: l.state, stale: l.stale, score: l.score, why: l.why, waitDays: l.waitDays };
 }
 
 function api_quickAdd(key, text) {
@@ -2011,6 +2114,16 @@ function api_leadSnooze(key, id, days) {
   return snoozeLead_(id, days);
 }
 
+function api_leadSpread(key, perDay) {
+  auth_(key);
+  return spreadOverdue_(perDay);
+}
+
+function api_emailDismissOld(key, days) {
+  auth_(key);
+  return dismissOldEmail_(days);
+}
+
 function api_emailScan(key) {
   auth_(key);
   return emailScanNow_();
@@ -2052,6 +2165,8 @@ const API_FUNCTIONS = {
   leadSnooze: api_leadSnooze,
   leadHistory: api_leadHistory,
   emailScan: api_emailScan,
+  emailDismissOld: api_emailDismissOld,
+  leadSpread: api_leadSpread,
   emailAccept: api_emailAccept,
   emailDismiss: api_emailDismiss,
 };

@@ -265,6 +265,87 @@ function pipelineReport_() {
     `\n🟡 Lead nguội (≥${STALE_DAYS} ngày): ${open.filter(l => l.stale).length}`;
 }
 
+// ---------- Ưu tiên: “Làm ngay” ----------
+// Triết lý cho Account Manager: khách đang chờ bạn là nặng nhất (chậm trả lời = mất deal),
+// sau đó tới việc đã hứa mà trễ hạn, deal càng gần chốt và càng lớn càng được đẩy lên.
+
+const FOCUS_SIZE = 10;
+const STAGE_WEIGHT = { new: 0, contacted: 4, meeting: 8, proposal: 12, negotiating: 16 };
+
+/**
+ * Lead nào khách đang chờ bạn trả lời (theo email): leadId -> số ngày khách đã chờ.
+ * Bỏ qua nếu bạn đã ghi liên hệ với lead SAU email cuối của khách (đã xử lý rồi).
+ */
+function leadsWaitingMe_(leads) {
+  const out = {};
+  if (!emailEnabled_()) return out;
+  const byId = {}; leads.forEach(l => { byId[l.id] = l; });
+  emailRows_().forEach(r => {
+    if (r.wait !== 'me' || (r.status !== EMAIL_STATUS.IMPORTED && r.status !== EMAIL_STATUS.SUGGESTED)) return;
+    const l = byId[r.leadId || r.matchLeadId]; if (!l || l.closed) return;
+    const mailDay = r.lastAt.slice(0, 10);
+    if (mailDay && l.lastContact > mailDay) return;
+    out[l.id] = Math.max(out[l.id] || 0, emailWaitDays_(r));
+  });
+  return out;
+}
+
+/** Điểm ưu tiên (càng cao càng cần làm trước) + lý do ngắn để hiện trên thẻ. */
+function leadPriority_(l, waitDays) {
+  const t = today_();
+  let score = 0, why = '';
+  if (waitDays != null) { score += 100 + Math.min(waitDays, 14) * 2; why = waitDays ? `khách chờ ${waitDays} ngày` : 'khách đang chờ'; }
+  if (l.state === 'overdue') { const d = daysBetween_(l.due, t); score += 40 + Math.min(d, 10) * 1.5; why = why || `trễ ${d} ngày`; }
+  else if (l.state === 'today') { score += 45; why = why || 'hạn hôm nay'; }
+  else if (l.state === 'none') { score += 30; why = why || 'chưa có next action'; }
+  else if (l.due) { const d = daysBetween_(t, l.due); score += d <= 2 ? 20 : d <= 7 ? 5 : 0; }
+  score += STAGE_WEIGHT[l.stage] || 0;
+  if (l.value) score += Math.min(15, Math.log10(l.value / 1e6 + 1) * 8);
+  if (l.stale) { score += 8; why = why || `${l.daysSince} ngày chưa liên hệ`; }
+  return { score: Math.round(score), why };
+}
+
+/** Lead đang mở, đã gắn điểm, xếp từ cần làm nhất. */
+function rankedLeads_() {
+  const open = leads_(false), wait = leadsWaitingMe_(open);
+  return open.map(l => Object.assign(l, { waitDays: wait[l.id] != null ? wait[l.id] : null }, leadPriority_(l, wait[l.id])))
+    .sort((a, b) => b.score - a.score || (a.due || '9999').localeCompare(b.due || '9999') || b.value - a.value);
+}
+
+/** “Làm ngay” cho Telegram: tối đa n lead, mỗi lead 2 dòng ngắn, phần còn lại chỉ đếm. */
+function leadFocusText_(n) {
+  const all = rankedLeads_();
+  if (!all.length) return '';
+  const urgent = all.filter(l => l.waitDays != null || l.state === 'overdue' || l.state === 'today' || l.state === 'none');
+  const top = urgent.slice(0, n || FOCUS_SIZE);
+  if (!top.length) return `🐟 ${all.length} lead đang mở, không có gì gấp hôm nay.`;
+  const cut = (s, k) => (s.length > k ? s.slice(0, k - 1).trim() + '…' : s);
+  const lines = top.map((l, i) => `${i + 1}. ${l.waitDays != null ? '📧' : l.state === 'overdue' ? '🔴' : l.state === 'today' ? '🟠' : '⚪'} ${l.name} · ${l.why}\n    ➜ ${cut(l.next || 'Đặt next action', 60)}`);
+  const rest = urgent.length - top.length;
+  return `🎯 Làm ngay (${top.length}/${all.length} lead)\n` + lines.join('\n') + (rest > 0 ? `\n… còn ${rest} lead cần xử lý, xem trên web app` : '');
+}
+
+/**
+ * Rải các lead quá hạn sang những ngày làm việc tới, mỗi ngày tối đa perDay lead (tính cả lead đã có hạn ngày đó).
+ * Lead điểm cao nhất được xếp sớm nhất. Không đụng tới lead chưa quá hạn.
+ */
+function spreadOverdue_(perDay) {
+  perDay = Math.max(1, Math.min(10, Number(perDay) || 3));
+  const ranked = rankedLeads_(), t = today_();
+  const overdue = ranked.filter(l => l.state === 'overdue');
+  if (!overdue.length) return 'Không có lead nào quá hạn 🎉';
+  const load = {}; ranked.forEach(l => { if (l.due && l.due >= t) load[l.due] = (load[l.due] || 0) + 1; });
+  let day = workday_(t);
+  const plan = {};
+  overdue.forEach(l => {
+    while ((load[day] || 0) >= perDay) day = workday_(addDays_(day, 1));
+    load[day] = (load[day] || 0) + 1;
+    setLeadCells_(l, { [LC.DUE]: day, [LC.NEXT]: l.next || 'Follow-up' });
+    plan[day] = (plan[day] || 0) + 1;
+  });
+  return `🗓 Đã rải ${overdue.length} lead quá hạn: ` + Object.keys(plan).sort().map(d => `${dueLabel_(d)} ${plan[d]}`).join(' · ');
+}
+
 /** Gom các lead cần chú ý để nhắc. */
 function leadAttention_() {
   const open = leads_(false);

@@ -30,7 +30,8 @@ function api_dashboard(key) {
     tasks: sortTasks_(tasks_(false)).map(x => ({ id: x.id, title: x.title, status: x.status, due: x.due, project: x.project, priority: x.priority })),
     projects: taskProjects_(),
     aiTasks: aiEnabled_(),
-    leads: sortLeads_(leads_(false)).map(apiLead_),
+    leads: rankedLeads_().map(apiLead_),
+    focusSize: FOCUS_SIZE,
     stages: LEAD_STAGES.map(s => ({ key: s.key, label: s.label })),
     staleDays: STALE_DAYS,
     email: emailDashboard_(),
@@ -40,7 +41,7 @@ function api_dashboard(key) {
 function apiLead_(l) {
   return { id: l.id, name: l.name, contact: l.contact, stage: l.stage, stageLabel: l.stageLabel, value: l.value,
     next: l.next, due: l.due, source: l.source, note: l.note, lastContact: l.lastContact,
-    daysSince: l.daysSince, state: l.state, stale: l.stale };
+    daysSince: l.daysSince, state: l.state, stale: l.stale, score: l.score, why: l.why, waitDays: l.waitDays };
 }
 
 function api_quickAdd(key, text) {
@@ -167,6 +168,16 @@ function api_leadSnooze(key, id, days) {
   return snoozeLead_(id, days);
 }
 
+function api_leadSpread(key, perDay) {
+  auth_(key);
+  return spreadOverdue_(perDay);
+}
+
+function api_emailDismissOld(key, days) {
+  auth_(key);
+  return dismissOldEmail_(days);
+}
+
 function api_emailScan(key) {
   auth_(key);
   return emailScanNow_();
@@ -208,6 +219,8 @@ const API_FUNCTIONS = {
   leadSnooze: api_leadSnooze,
   leadHistory: api_leadHistory,
   emailScan: api_emailScan,
+  emailDismissOld: api_emailDismissOld,
+  leadSpread: api_leadSpread,
   emailAccept: api_emailAccept,
   emailDismiss: api_emailDismiss,
 };
